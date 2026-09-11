@@ -1,0 +1,38 @@
+# SYNTHETIC SMOKE TEST ONLY -- ROM-free toy "catch" game with the same env/replay/training contract.
+# Passing this does not validate Atari integration.
+name: synthetic_smoke
+seed: 0
+device: cpu
+env:
+  id: synthetic:catch
+  sticky_action_prob: 0.0
+  max_episode_decisions: 60     # episodes last 50-65 decisions: mixes termination and truncation
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+replay:
+  capacity: 3000
+  rollout_steps: 5
+  save_with_checkpoint: true
+optim:
+  batch_size: 8
+train:
+  total_decisions: 800
+  warmup_decisions: 200
+  update_every: 4
+  eps_decay_decisions: 500
+  log_every_updates: 50
+  checkpoint_every_decisions: 400
+  eval_every_decisions: 800
+  eval_episodes: 2
+  eval_controllers: [q, lookahead]
+  eval_max_episode_decisions: 200
+eval:
+  episodes: 2
+diagnostics:
+  episodes: 3
+  max_decisions: 600
+  batch_size: 16

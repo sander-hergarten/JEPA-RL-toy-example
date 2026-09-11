@@ -1,0 +1,40 @@
+# SMOKE TEST ONLY -- checks integration on real Pong in a few minutes. Not a learning experiment:
+# tiny warmup/batch/budget, debug sticky-action setting, and capped evaluation episodes.
+name: pong_smoke
+seed: 0
+device: auto
+env:
+  id: ALE/Pong-v5
+  sticky_action_prob: 0.0       # debug setting: explicit
+  noop_max: 30
+  fire_on_reset: false
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+replay:
+  capacity: 5000
+  rollout_steps: 5
+  save_with_checkpoint: true
+optim:
+  batch_size: 8
+train:
+  total_decisions: 1500
+  warmup_decisions: 300
+  update_every: 4
+  eps_decay_decisions: 1000
+  log_every_updates: 50
+  checkpoint_every_decisions: 750
+  eval_every_decisions: 1500
+  eval_episodes: 1
+  eval_controllers: [q, lookahead]
+  eval_max_episode_decisions: 300
+eval:
+  episodes: 2
+  max_episode_decisions: 300
+diagnostics:
+  episodes: 1
+  max_decisions: 600
+  batch_size: 16

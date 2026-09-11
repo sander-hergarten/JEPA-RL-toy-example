@@ -1,0 +1,51 @@
+# Variant C: full latent world model. All losses on; Q supervised on the real root and imagined depths.
+# Data is collected with epsilon-greedy Q; evaluate the same checkpoint with --controller q and lookahead.
+name: pong_world_model
+seed: 0
+device: auto
+env:
+  id: ALE/Pong-v5
+  sticky_action_prob: 0.25      # primary experiment: explicit
+  frame_skip: 1
+  action_repeat: 4
+  screen_size: 84
+  history: 4
+  noop_max: 30
+  fire_on_reset: false          # Pong serves without FIRE; see README
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+  lambda_q: 1.0
+  lambda_jepa: 1.0
+  lambda_reward: 1.0
+  lambda_continue: 1.0
+  lambda_var: 1.0
+  gamma: 0.99
+  variance_floor: 0.1
+replay:
+  capacity: 100000
+  rollout_steps: 5
+  save_with_checkpoint: true
+optim:
+  batch_size: 32
+  lr: 1.0e-4
+  grad_clip_norm: 10.0
+  tau: 0.99
+train:
+  total_decisions: 100000
+  warmup_decisions: 5000
+  update_every: 4
+  eps_start: 1.0
+  eps_end: 0.1
+  eps_decay_decisions: 50000
+  checkpoint_every_decisions: 10000
+  eval_every_decisions: 25000
+  eval_episodes: 3
+  eval_controllers: [q, lookahead]
+eval:
+  episodes: 10
+  seed_base: 10000
+  epsilon: 0.0

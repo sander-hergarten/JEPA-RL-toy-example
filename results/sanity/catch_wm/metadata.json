@@ -1,0 +1,58 @@
+{
+  "name": "catch_wm",
+  "variant": "C_world_model",
+  "seed": 0,
+  "device": "cpu",
+  "torch_threads": 2,
+  "versions": {
+    "python": "3.14.7",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3"
+  },
+  "env": {
+    "kind": "synthetic",
+    "id": "synthetic:catch",
+    "action_meanings": [
+      "NOOP",
+      "FIRE",
+      "RIGHT",
+      "LEFT"
+    ],
+    "observation_shape": [
+      4,
+      84,
+      84
+    ],
+    "preprocessing": {
+      "history": 4,
+      "history_padding": "repeat first episode observation",
+      "sticky_action_prob": 0.0,
+      "max_episode_decisions": 60,
+      "reward_transform": "sign",
+      "balls": 5
+    }
+  },
+  "num_actions": 4,
+  "latent_shape": [
+    64,
+    7,
+    7
+  ],
+  "parameter_counts": {
+    "encoder": 84256,
+    "dynamics": 237120,
+    "q_head": 1608196,
+    "reward_head": 804867,
+    "continuation_head": 804353
+  },
+  "trained_modules": [
+    "encoder",
+    "q_head",
+    "dynamics",
+    "reward_head",
+    "continuation_head"
+  ],
+  "trained_parameters": 3538792,
+  "command": "/home/sander/Documents/programming/jepa-rl-test/.venv/bin/python -m atari_jepa.train --config configs/synthetic_smoke.yaml --run-dir runs_sanity/catch_wm --set name=catch_wm --set train.total_decisions=20000 --set train.warmup_decisions=1000 --set train.eps_decay_decisions=10000 --set train.eval_every_decisions=5000 --set train.checkpoint_every_decisions=5000 --set train.eval_episodes=10 --set train.log_every_updates=500 --set replay.capacity=20000 --set optim.batch_size=32 --set loss.q_imagined=true --set loss.jepa=true --set loss.reward=true --set loss.continuation=true --set loss.variance=true --set 'train.eval_controllers=[q,lookahead]' --set torch_threads=2",
+  "started_at": "2026-09-11T17:08:59.676833+00:00"
+}
