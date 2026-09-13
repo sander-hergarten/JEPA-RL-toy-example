@@ -527,12 +527,71 @@ produces the **largest and most consistent planning gain** in the project (+2.7 
 the lookahead score is closer to a second, differently-trained action-value head than to foresight
 about the future. It improves decisions without improving the world model.
 
-**Answering the original question with all runs in hand:** predicting future representations did
+**Cross-game summary.** On Pong, temporal prediction helped a little (B best, −12.9) and the world
+model hurt (−18.8); on Breakout the ordering reverses and the plain baseline wins by a wide margin
+(+8.1 against +3.2 for B). What *is* consistent across both games is the mechanism: the temporal
+objective compresses the latent into very few directions (effective rank 13–20 on Pong, 4–5 on
+Breakout), the dynamics ignore the action, and a grounded inverse-dynamics term fixes both
+(rank 96–600, action sensitivity up 60–1000×) while improving the model-based variant's play in both
+games. No model-based configuration beat the model-free baseline on either game at this budget.
+
+**Answering the original question with the Pong runs in hand:** predicting future representations did
 produce a model that supports better decisions than its own Q-policy (all three variants show a
 positive lookahead gain, largest with `predicted`), but no model-based configuration beat the plain
 model-free baselines at this budget (best model variant −12.3 versus B's −12.9 and A's −14.6, well
 within seed spread). Grounded action-conditioning (`real`) helped play the most and helped the
 representation the most, at the cost of stability.
+
+### Second game: Breakout (500k decisions, 3 seeds, same protocol)
+
+Breakout serves with FIRE (at reset and after each lost life, see the environment table), scores 1/4/7
+per brick (all clipped to +1), and gives the agent exactly one thing to control. Because a
+deterministic policy can fall into a bounce loop that never ends, evaluation is reported at ε = 0.01
+as well as ε = 0; at ε = 0 several evaluations hit the 27,000-decision cap.
+
+| Variant (Breakout 500k) | Q-policy, ε = 0.01 | Lookahead, ε = 0.01 | Q-policy, ε = 0 |
+|---|---|---|---|
+| A: Q baseline | **+8.10 ± 0.99** | – | +7.43 ± 0.92 |
+| B: temporal JEPA | +3.23 ± 1.20 | – | +2.33 ± 0.66 |
+| C: world model | +3.60 ± 0.43 | +4.17 ± 1.08 | +2.47 ± 1.03 |
+| C + inverse `real` | +5.17 ± 0.12 | +4.57 ± 0.19 | +4.00 ± 1.10 |
+
+**On Breakout the model-free baseline wins clearly, and temporal prediction actively hurts.** A scores
+more than twice B. This is the opposite ordering from Pong (where B was best and A worst), from the same
+code and protocol, which is a useful reminder of how little a 3-seed, single-game result supports.
+
+The embeddings show why, and it is the sharpest instance of the compression failure in this repository:
+
+| Breakout diagnostic | A | B | C | C + inverse `real` |
+|---|---|---|---|---|
+| Latent effective rank (of 3,136) | 35 | **3.9** | 5.2 | **96** |
+| Dimensions for 90% of variance | 61 | **4** | 6 | 169 |
+| Median R² over varying RAM bytes | 0.05 | **−4.9** | 0.30 | 0.03 |
+| R²: paddle x / ball x | 0.08 / 0.27 | **−5.2 / −44** | 0.83 / 0.41 | 0.45 / 0.45 |
+| Centered distance Δ1 | 0.089 | 0.012 | 0.011 | 0.308 |
+| Reward-within-8 probe AUC | 0.92 | 0.85 | 0.98 | 0.79 |
+| Next-latent distance between actions | – | – | 0.0001 | **0.08–0.16** |
+| Depth-5 error penalty for shuffled actions | – | – | +2–8% | **+72–100%** |
+| Inverse head accuracy, real pairs (chance 0.25) | – | – | – | 0.66–0.78 |
+
+**B collapses almost completely on Breakout**: 90% of its latent variance sits in *four* directions,
+consecutive latents differ by 0.012, and the emulator state is no longer decodable at all (the negative
+R² values mean the probe does worse than predicting the training mean). Breakout's screen is mostly a
+static brick wall with one small ball, so "predict your own slow features" is an easy and nearly
+useless solution. C resists this better because reward and continuation supervision force it to keep
+score- and event-related information (reward AUC 0.98, paddle R² 0.83), and it plays slightly better
+than B.
+
+**The grounded inverse-dynamics loss again repairs exactly what the diagnostics flagged**, and more
+strongly than on Pong: the effective rank goes from 5 to 96, action sensitivity of the dynamics rises
+by roughly 1,000× (0.0001 → 0.08–0.16), shuffled actions now cost 72–100% extra prediction error
+(control: 2–8%), and its inverse head reaches 0.66–0.78 accuracy on real pairs against a 0.25 chance
+level. It is also the best model-based variant (+5.17 against C's +3.60), with much less seed spread
+than on Pong (±0.12). It still does not reach the model-free baseline, and its state decodability and
+reward probe are *worse* than C's, so the extra rank is not all task-relevant.
+
+Planning helps C (+0.57 over its own Q-policy) but not C + inverse `real` (−0.60), so the one-step
+lookahead gain is not consistent across games either.
 
 ### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
