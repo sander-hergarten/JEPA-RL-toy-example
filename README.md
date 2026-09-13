@@ -57,6 +57,9 @@ python -m atari_jepa.evaluate --checkpoint runs/pong_world_model/seed0/checkpoin
 python -m atari_jepa.evaluate --checkpoint runs/pong_world_model/seed0/checkpoint.pt --controller lookahead
 python -m atari_jepa.evaluate --checkpoint RUN/checkpoint.pt --controller lookahead --horizon 3  # optional H-step beam search
 
+# is the latent space representative? spectrum, temporal structure, state/reward probes
+python -m atari_jepa.embeddings --checkpoint runs/pong_world_model_500k/seed0/checkpoint.pt
+
 # held-out diagnostics on a frozen checkpoint (+ optional fixed-batch optimization check)
 python -m atari_jepa.diagnostics --checkpoint runs/pong_world_model/seed0/checkpoint.pt
 python -m atari_jepa.diagnostics --checkpoint RUN/checkpoint.pt --fit-fixed-batch 300 --fit-components jepa
@@ -144,6 +147,7 @@ deterministic latent predictor can only approximate either.
 | Q head | `[B,64,7,7] → [B,A]` | flatten → 512 ReLU → A |
 | Reward head | `(z, a) → [B,3]` | [flatten(z), one_hot(a)] → 256 ReLU → logits over rewards {−1, 0, +1} |
 | Continuation head | `(z, a) → [B]` | same as the reward head, 1 logit |
+| Inverse head (optional) | `(z_t, z_{t+1}) → [B,A]` | [flatten(z_t), flatten(z_{t+1})] → 256 ReLU → action logits. Built only when `loss.inverse` ≠ `none` |
 | Targets | EMA copies of encoder and Q head | `θ_t ← τ θ_t + (1−τ) θ`, τ = 0.99 after every optimizer step. No target dynamics |
 
 Planning uses `E[r] = p(+1) − p(−1)` and `P(continue) = sigmoid(logit)`. The 3-class reward head
@@ -152,8 +156,19 @@ config rejects any other `reward_transform`. Removing clipping needs a different
 
 Parameters (Pong, A = 6): encoder 84k, dynamics 237k, Q head 1.61M, reward head 805k, continuation
 head 805k. Variant A trains encoder + Q (1.69M), B adds dynamics (1.93M), C trains everything (3.54M).
-All modules are always built, so checkpoints share one layout. `metadata.json` lists which modules
-receive gradients.
+The core modules are always built, so A/B/C checkpoints share one layout. The optional inverse head
+(1.61M) exists only in configs that use it, so older checkpoints load unchanged. `metadata.json` lists
+which modules receive gradients.
+
+**Precision.** `network.conv_dtype: bfloat16` runs the encoder and dynamics conv stacks under bf16
+autocast (CUDA). Parameters, Adam state, LayerNorm, the MLP heads and every loss stay fp32, because
+latent cosine distances (≈ 1e-2) are below bf16's resolution near 1.0 (≈ 4e-3). On the RTX 5090 at
+batch 32 it is **slower** than fp32 (8.2 vs 7.2 ms per C update). The convs are too small for bf16
+tensor cores to pay off, fp32 convs already use TF32, and autocast adds casts. All reported runs
+therefore use fp32. Some CPU backends (oneDNN on AVX2) cannot run bf16 conv backward, and training
+refuses to start there with a clear error. An update fetches all its metrics in a single
+device-to-host transfer; the finiteness and reward-range checks run after that transfer (≈ 5% faster
+per update).
 
 ## Replay and masks
 
@@ -189,14 +204,17 @@ L_continue = masked_mean_k( BCEWithLogits(cont_head(z_hat[k], a_k), 1 - terminat
 y_k        = r_k + γ (1 - terminated_k) Q_target(target_enc(x_{k+1}))[argmax_a Q(enc(x_{k+1}))]   # no_grad, real data
 L_Q        = masked_mean_k( Huber(Q(z_hat[k])[a_k], y_k), m_k )          # k = 0 only for A and B
 L_var      = mean_j relu(0.1 - sqrt(Var_batch(flatten z_hat[0])_j + 1e-4))
-L = λ_Q L_Q + λ_jepa L_jepa + λ_r L_reward + λ_c L_continue + λ_var L_var   (all enabled λ = 1)
+L_inverse  = masked_mean_k( CE(inverse_head(u_k, u_{k+1}), a_k), m_k )   # optional
+             # inverse=real:      u_k = encoder(x_k)  (online, real observations; u_0 = z_hat[0])
+             # inverse=predicted: u_k = z_hat[k]
+L = λ_Q L_Q + λ_jepa L_jepa + λ_r L_reward + λ_c L_continue + λ_var L_var [+ λ_inv L_inverse]   (all enabled λ = 1)
 ```
 
 Adam (lr 1e-4, eps 1.5e-4), global grad-norm clip 10, batch 32, γ = 0.99 per decision, Huber δ = 1.
 Each component, its weight and the per-depth values go to `updates.jsonl`. An optional covariance
 penalty is implemented through the B×B Gram matrix (no 3136² matrix). It is off.
 
-Gradient audit (verified in `tests/test_gradients.py`):
+Gradient audit (verified in `tests/test_gradients.py` and `tests/test_inverse_and_precision.py`):
 
 | Loss / path | Encoder | Dynamics | Its head | Targets |
 |---|---|---|---|---|
@@ -205,6 +223,8 @@ Gradient audit (verified in `tests/test_gradients.py`):
 | Q on imagined states (C) | ✓ | ✓ | ✓ | ✗ |
 | Q on real root | ✓ | – | ✓ | ✗ |
 | Variance floor | ✓ | ✗ | – | ✗ |
+| Inverse dynamics, `real` | ✓ | ✗ | ✓ | ✗ |
+| Inverse dynamics, `predicted` | ✓ | ✓ | ✓ | ✗ |
 | Bootstrap targets | ✗ | ✗ | ✗ | ✗ |
 
 **Loop.** Random actions for 5,000 warmup decisions, then ε-greedy on the online Q with ε linear
@@ -248,10 +268,45 @@ checkpoint and its target encoder:
 * continuation per depth: BCE, Brier, prior BCE, terminal precision/recall and the terminal count,
 * Q TD error (Huber and |TD|) on real roots and at each imagined depth,
 * action sensitivity at a fixed state (pairwise next-latent distance, range of E[r] and P(continue)),
+* a **movement probe**: an evaluation-only linear classifier for the horizontal movement class of
+  `a_t` (none / RIGHT* / LEFT*, from the action meanings), trained on frozen online latents
+  `(z_t, z_{t+1} − z_t)` from half of the held-out episodes and tested on the other half. It asks
+  whether the encoder represents what the agent controls, and is reported against majority and chance
+  balanced accuracy,
+* for checkpoints with an inverse head, its held-out action and movement accuracy on real pairs
+  `(f(x_t), f(x_{t+1}))` and on predicted pairs `(z_hat[0], z_hat[1])`,
 * controller latency, and the held-out episodes' returns, decisions and frames.
 
 `--fit-fixed-batch N [--fit-components ...]` optimizes a *copy* of the model on one held-out batch with
 fixed targets. It checks the optimization path only.
+
+### Is the latent space representative? (`atari_jepa.embeddings`)
+
+```bash
+python -m atari_jepa.embeddings --checkpoint runs/pong_world_model_500k/seed0/checkpoint.pt
+python -m atari_jepa.embeddings --checkpoint runs/*/seed*/checkpoint.pt      # compare several
+```
+
+Low prediction loss does not make a representation good: a slow, nearly constant latent predicts itself
+well. This read-only pass collects fresh episodes and measures four things on the frozen encoder,
+writing `embeddings.json` next to the checkpoint:
+
+* **Spectrum** of the root latents: participation ratio, entropy-based effective rank, variance in the
+  leading components, dimensions holding 90/99% of the variance. This catches a low-rank latent that
+  still passes the per-dimension variance floor.
+* **Temporal structure**: centered cosine distance between latents `t` and `t + gap` within an episode,
+  against pairs from different episodes.
+* **State decodability** (evaluation-only): ridge from the latent to the emulator state (ALE RAM, or the
+  toy game's true state), fit on half the held-out episodes and scored by R² on the others. Features are
+  projected onto the training half's leading principal components first, since the latent has more
+  dimensions than the probe has samples. The emulator state is never an agent input.
+* **Task relevance**: linear probes for "a reward event occurs within the next 8 decisions" (AUC against
+  its base rate) and for the movement class of the action.
+
+RAM byte indices for the named Pong variables come from published annotations and are not verified
+here; the unlabelled per-byte summary does not depend on them. Score-counter bytes can leave their
+training range in the test episodes, so the *mean* R² over bytes is dragged negative by extrapolation
+and the median is the number to read.
 
 ## Experiments
 
@@ -407,6 +462,39 @@ These are 3-seed results with 10 evaluation episodes each, from a single game, b
 untuned prototype hyperparameters. Treat them as directions for the next experiment, not as
 conclusions.
 
+### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
+
+Averages over seeds, from `runs/*/seed*/embeddings.json`:
+
+| | A: Q baseline | B: temporal JEPA | C: world model |
+|---|---|---|---|
+| Effective rank (of 3,136 dims) | 70 | 20 | 13 |
+| Variance in the top 10 components | 0.52 | 0.77 | 0.84 |
+| Dimensions for 90% of variance | 125 | 26 | 18 |
+| Median R² over varying RAM bytes | 0.53 | 0.60 | 0.61 |
+| R²: player paddle / ball y / ball x | 0.89 / 0.91 / 0.44 | 0.91 / 0.85 / 0.36 | 0.94 / 0.89 / 0.56 |
+| Centered distance Δ1 / Δ10 / across episodes | 0.17 / 0.51 / 1.01 | 0.03 / 0.18 / 1.01 | 0.05 / 0.26 / 1.01 |
+| Reward within 8 decisions: AUC (base rate) | 0.95 (0.13) | 0.97 (0.13) | 0.96 (0.11) |
+| Movement probe, balanced accuracy (chance 0.33) | 0.58 | 0.63 | 0.63 |
+
+**The JEPA embeddings are not collapsed, and they are task-relevant.** The paddle and the ball's
+vertical position are linearly decodable at R² ≈ 0.85–0.94, an imminent reward event is readable at
+AUC 0.96–0.97 against a 0.11–0.13 base rate, and latent distance grows monotonically with the time gap
+while staying well below the across-episode level (≈ 1.0), so the space has real temporal structure
+rather than noise.
+
+**But they are heavily compressed.** The temporal objective cuts the effective rank from 70 (A, no
+JEPA) to 20 (B) to 13 (C), with 84% of the variance of C's latent in ten directions. The variance floor
+is satisfied per dimension (0% of dimensions below it for B and C) while the cloud still lives in ~13
+directions — per-dimension variance does not detect this, and the spectrum does. Compression is what
+the prediction objective rewards: fewer, slower directions are easier to predict. It also tracks the
+ordering of the Q-policy results at 500k (A −14.6, B −12.9, C −18.8): C compresses the most and plays
+worst, which fits the picture of a representation optimized for predictability over control.
+
+The one consistently weak variable is the ball's **horizontal** position (R² 0.36–0.56, versus 0.85+ for
+vertical). In Pong, x is what determines *when* the ball arrives, and it moves fastest, so it is exactly
+what a smoothness-rewarding objective discards first.
+
 ### Suggested next experiments (from the observed failures)
 
 * **Make the dynamics use the action.** The failure is controllability, not predictability. Options:
@@ -418,8 +506,10 @@ conclusions.
 * **Check whether the encoder represents the agent's paddle at all**, with an evaluation-only linear
   probe for paddle and ball position. If it doesn't, no dynamics objective on these latents can be
   action-sensitive.
-* **Guard against partial collapse** (B seed 2): track pairwise cosine and the fraction below the floor
-  during training. The optional covariance penalty is the cheapest thing to try.
+* **Guard against partial collapse and over-compression**: track the effective rank (not only the
+  per-dimension variance floor) during training. At 500k the JEPA variants use ~13–20 of 3,136
+  directions, and the variance floor does not see it. The optional covariance penalty is the cheapest
+  thing to try, and the ball's horizontal position is the variable to watch.
 * **Find which added loss slows C's Q-learning.** Ablate imagined-state Q (B + reward + continuation)
   and the reward/continuation weights, and compare Q-learning curves with B's. At 500k, C's Q-policy
   is the worst of the three.
@@ -444,7 +534,8 @@ version changes, and evaluation always rebuilds the environment from the checkpo
 
 ## Tests
 
-`python -m pytest -q` runs 45 tests in about 20 s on CPU. They use a synthetic env and toy models, plus
+`python -m pytest -q` runs 56 tests in about 25 s. On a CPU without bf16 conv backward, the
+bf16 training-step test is skipped: 55 run locally, and all 56 pass on the CUDA machine. They use a synthetic env and toy models, plus
 two real-ALE contract tests that are skipped without ale-py:
 
 * replay: causal stacks, first-frame padding, eviction with absolute ordering, no sequence crossing a reset, partial episodes and collection boundaries, persistence,
@@ -454,7 +545,10 @@ two real-ALE contract tests that are skipped without ale-py:
 * EMA initialization and the update convention; reward classes and expected reward; Double DQN selection/evaluation and discount masking,
 * planning on a hand-built latent MDP: the higher-return action wins, continuation suppresses post-terminal value, ties break low, and exhaustive beam search matches brute force,
 * checkpoint round trip (outputs, targets, optimizer, config, counters, schedule, RNG, replay), resume with and without replay, compatibility checks, and the evaluate CLI,
-* fixed-batch fitting reduces JEPA and reward loss with fixed targets; diagnostics produce finite metrics and nonconstant latents.
+* fixed-batch fitting reduces JEPA and reward loss with fixed targets; diagnostics produce finite metrics and nonconstant latents,
+* embeddings: the spectrum separates full-rank from low-rank latents and flags a constant one, temporal distance grows with the gap, and the evaluation-only state capture feeds probes that recover the toy game's true state,
+* inverse dynamics: gradient routing for both forms, padding invariance, old configs and checkpoints loading unchanged; the movement probe separates a planted signal and fails on shuffled labels,
+* bfloat16: forward matches fp32 with shared weights and keeps fp32 latents; a training step gives fp32 gradients (CUDA); the single-transfer update still rejects unclipped rewards.
 
 ## Limitations
 

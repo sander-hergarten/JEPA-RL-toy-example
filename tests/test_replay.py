@@ -115,3 +115,15 @@ def test_persistence_round_trip(tmp_path):
         np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
     with pytest.raises(RuntimeError):
         loaded.add(0, 0.0, False, False, frame(9, 9))  # loaded episodes stay closed
+
+
+def test_stacks_at_matches_gather_and_rejects_out_of_range():
+    buf = SequenceReplay(100, (84, 84), history=4)
+    fill(buf, [6])
+    roots = np.array([0, 2, 4])
+    np.testing.assert_array_equal(buf.stacks_at(roots), buf.gather(roots, 1).observations[:, 0])
+    # the episode's final observation has no transition, so it is not a valid root but is still stored
+    assert 6 not in buf.valid_roots().tolist()
+    assert ids(buf.stacks_at(np.array([6]))[0]) == [(0, 3), (0, 4), (0, 5), (0, 6)]
+    with pytest.raises(ValueError):
+        buf.stacks_at(np.array([buf.n_written]))

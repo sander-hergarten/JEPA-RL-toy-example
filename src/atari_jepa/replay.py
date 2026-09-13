@@ -167,6 +167,13 @@ class SequenceReplay:
         hist = abs_idx[..., None] - np.minimum(offsets, t[..., None])
         return self.frames[hist % self.capacity]
 
+    def stacks_at(self, abs_idx: np.ndarray) -> np.ndarray:
+        """Stacked histories at absolute indices (any stored observation, not only valid roots)."""
+        abs_idx = np.asarray(abs_idx, dtype=np.int64)
+        if (abs_idx < self.oldest).any() or (abs_idx >= self.n_written).any():
+            raise ValueError("stacks_at() received an index outside the buffer")
+        return self._stacks(abs_idx)
+
     def gather(self, roots: np.ndarray, horizon: int) -> SequenceBatch:
         """Sequences of ``horizon`` transitions starting at ``roots`` (absolute indices)."""
         roots = np.asarray(roots, dtype=np.int64)

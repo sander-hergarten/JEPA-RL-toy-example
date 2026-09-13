@@ -183,6 +183,10 @@ class AtariEnv:
             truncated = True
         return self._processed(), total, terminated, truncated, {"frames": frames}
 
+    def state_vector(self) -> np.ndarray:
+        """Emulator RAM (128 bytes). Evaluation-only: never an input to the agent or its training."""
+        return self._ale.getRAM().astype(np.int64)
+
     def metadata(self) -> dict[str, Any]:
         import ale_py
         import gymnasium as gym
@@ -286,6 +290,10 @@ class CatchEnv:
         limit = self.cfg.max_episode_decisions
         truncated = bool(limit is not None and self.decisions >= limit and not terminated)
         return self._render(), reward, terminated, truncated, {"frames": 1}
+
+    def state_vector(self) -> np.ndarray:
+        """True state of the toy game; evaluation-only, like the ALE RAM."""
+        return np.array([self.ball_row, self.ball_col, self.paddle], dtype=np.int64)
 
     def metadata(self) -> dict[str, Any]:
         return {

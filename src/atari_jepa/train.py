@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import yaml
 
-from .agent import Learner, WorldModel, trained_modules
+from .agent import Learner, WorldModel, check_precision_supported, trained_modules
 from .checkpoint import check_compatible, load_checkpoint, restore_rng, rng_state, save_checkpoint
 from .config import Config, _set_nested, config_from_dict, load_config, save_config
 from .envs import FrameStacker, clip_reward, make_env
@@ -53,6 +53,7 @@ class Trainer:
         self.explore_rng = np.random.default_rng([cfg.seed, 1])
         self.replay_rng = np.random.default_rng([cfg.seed, 2])
 
+        check_precision_supported(cfg, device)
         self.env = make_env(cfg.env)
         self.env_meta = self.env.metadata()
         self.model = WorldModel(cfg, self.env.num_actions).to(device)
@@ -224,11 +225,13 @@ class Trainer:
                     "lambda_reward": cfg.loss.lambda_reward if cfg.loss.reward else 0.0,
                     "lambda_continue": cfg.loss.lambda_continue if cfg.loss.continuation else 0.0,
                     "lambda_var": cfg.loss.lambda_var if cfg.loss.variance else 0.0,
+                    "lambda_inverse": cfg.loss.lambda_inverse if cfg.loss.inverse != "none" else 0.0,
                 }
             )
             self.updates_log.write(record)
             parts = [f"{k}={record[k]:.4f}" for k in
-                     ("loss_q", "loss_jepa", "loss_reward", "loss_continue", "loss_var", "latent_std_mean")
+                     ("loss_q", "loss_jepa", "loss_reward", "loss_continue", "loss_var", "loss_inverse",
+                      "inverse_acc", "latent_std_mean")
                      if k in record]
             self._log(f"update {c['updates']}: " + " ".join(parts))
             agg.clear()

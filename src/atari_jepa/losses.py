@@ -5,6 +5,9 @@ For a batch with ``K`` transitions per sequence (``k = 0..K-1``):
 * ``m_k = valid_k``                       reward, continuation and Q mask (terminal step included)
 * ``l_k = valid_k * (1 - terminated_k)``  next-latent (JEPA) mask
 
+The optional inverse-dynamics loss uses ``m_k``: the terminal transition's real final observation is a
+valid "after" frame for the action that produced it.
+
 Every component is normalized by its own count of valid entries (``masked_mean``), and padded entries
 are removed with ``torch.where`` so their values cannot leak into losses or gradients.
 """
@@ -55,15 +58,28 @@ def covariance_penalty(z_flat: torch.Tensor) -> torch.Tensor:
     return (total - diag.sum()) / D
 
 
-def reward_to_class(rewards: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Map clipped rewards {-1, 0, +1} to classes {0, 1, 2}. Refuses any other value on valid steps."""
+REWARD_RANGE_ERROR = (
+    "reward head received a reward outside {-1, 0, +1}; the 3-class head requires "
+    "sign-clipped rewards (env.reward_transform='sign')"
+)
+
+
+def reward_out_of_range(rewards: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """0-d bool tensor: whether any valid reward is outside {-1, 0, +1} (no host sync)."""
     ok = (rewards == -1) | (rewards == 0) | (rewards == 1)
-    if not bool((ok | ~mask.bool()).all()):
-        raise ValueError(
-            "reward head received a reward outside {-1, 0, +1}; the 3-class head requires "
-            "sign-clipped rewards (env.reward_transform='sign')"
-        )
-    return torch.where(mask.bool(), rewards + 1, torch.ones_like(rewards)).long()
+    return (~ok & mask.bool()).any()
+
+
+def reward_to_class(rewards: torch.Tensor, mask: torch.Tensor, check: bool = True) -> torch.Tensor:
+    """Map clipped rewards {-1, 0, +1} to classes {0, 1, 2}. Refuses any other value on valid steps.
+
+    ``check=False`` skips the (host-synchronizing) check; the caller must then check
+    ``reward_out_of_range`` itself.
+    """
+    if check and bool(reward_out_of_range(rewards, mask)):
+        raise ValueError(REWARD_RANGE_ERROR)
+    # clamp so an unchecked bad value can never become an illegal class index (a CUDA device assert)
+    return torch.where(mask.bool(), rewards + 1, torch.ones_like(rewards)).long().clamp(0, 2)
 
 
 def expected_reward(logits: torch.Tensor) -> torch.Tensor:
@@ -93,7 +109,13 @@ def unroll(dynamics: torch.nn.Module, z0: torch.Tensor, actions: torch.Tensor, s
     return z_hat
 
 
-def compute_losses(model, batch, cfg: LossConfig) -> tuple[torch.Tensor, dict[str, float]]:
+def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> tuple[torch.Tensor, dict]:
+    """Total loss and per-component metrics.
+
+    Metrics are floats by default. With ``as_tensors=True`` they are detached 0-d tensors and nothing
+    synchronizes with the host, so the caller can fetch them all in one transfer (see ``Learner``). The
+    caller must then raise ``REWARD_RANGE_ERROR`` if ``metrics["_reward_out_of_range"]`` is set.
+    """
     obs, actions = batch.observations, batch.actions
     B, K = actions.shape
     valid = batch.valid.bool()
@@ -103,18 +125,27 @@ def compute_losses(model, batch, cfg: LossConfig) -> tuple[torch.Tensor, dict[st
 
     q_depths = K if cfg.q_imagined else 1  # Q supervised on z_hat[0 .. q_depths-1]
     n_targets = max(q_depths, K if cfg.jepa else 0)  # target encodings needed for obs 1..n_targets
-    steps = K if cfg.jepa else (K - 1 if (cfg.reward or cfg.continuation or cfg.q_imagined) else 0)
+    if cfg.jepa or cfg.inverse == "predicted":
+        steps = K
+    else:
+        steps = K - 1 if (cfg.reward or cfg.continuation or cfg.q_imagined) else 0
+    inverse_real = cfg.inverse == "real"
 
     def encode_seq(encoder, frames: torch.Tensor) -> torch.Tensor:
         n = frames.shape[1]
         return encoder(frames.flatten(0, 1)).unflatten(0, (B, n))
 
+    # Online encodings of real next observations. With inverse="real" they need gradients (for all K
+    # steps); otherwise they are only used, detached, for Double DQN action selection.
+    n_online = K if inverse_real else q_depths
+    with torch.set_grad_enabled(inverse_real and torch.is_grad_enabled()):
+        online_next_z = encode_seq(model.encoder, obs[:, 1 : n_online + 1])  # [:, k] encodes obs k+1
+
     # ---- targets from real observations, no gradients
     with torch.no_grad():
         next_obs = obs[:, 1 : n_targets + 1]
         target_z = encode_seq(model.target_encoder, next_obs)  # target_z[:, k] encodes obs k+1
-        q_next_obs = next_obs[:, :q_depths]
-        online_next_q = model.q_head(model.encoder(q_next_obs.flatten(0, 1))).unflatten(0, (B, q_depths))
+        online_next_q = model.q_head(online_next_z[:, :q_depths].detach().flatten(0, 1)).unflatten(0, (B, q_depths))
         target_next_q = model.target_q_head(target_z[:, :q_depths].flatten(0, 1)).unflatten(0, (B, q_depths))
         next_value = double_dqn_value(online_next_q, target_next_q)
         y = td_targets(rewards[:, :q_depths], terminated[:, :q_depths], next_value, cfg.gamma)
@@ -155,7 +186,9 @@ def compute_losses(model, batch, cfg: LossConfig) -> tuple[torch.Tensor, dict[st
 
     if cfg.reward:
         logits = torch.stack([model.reward_head(z_hat[k], actions[:, k]) for k in range(K)], dim=1)
-        classes = reward_to_class(rewards, valid)
+        classes = reward_to_class(rewards, valid, check=not as_tensors)
+        if as_tensors:
+            metrics["_reward_out_of_range"] = reward_out_of_range(rewards, valid)
         ce = F.cross_entropy(logits.flatten(0, 1), classes.flatten(), reduction="none").view(B, K)
         l_reward = masked_mean(ce, valid)
         total = total + cfg.lambda_reward * l_reward
@@ -168,6 +201,20 @@ def compute_losses(model, batch, cfg: LossConfig) -> tuple[torch.Tensor, dict[st
         l_cont = masked_mean(bce, valid)
         total = total + cfg.lambda_continue * l_cont
         metrics["loss_continue"] = l_cont
+
+    if cfg.inverse != "none":
+        if inverse_real:
+            z_real = torch.cat([z0.unsqueeze(1), online_next_z], dim=1)  # f(x_0) .. f(x_K)
+            pairs = [(z_real[:, k], z_real[:, k + 1]) for k in range(K)]
+        else:
+            pairs = [(z_hat[k], z_hat[k + 1]) for k in range(K)]
+        inv_logits = torch.stack([model.inverse_head(a, b) for a, b in pairs], dim=1)  # [B, K, A]
+        ce = F.cross_entropy(inv_logits.flatten(0, 1), actions.flatten(), reduction="none").view(B, K)
+        l_inv = masked_mean(ce, valid)
+        total = total + cfg.lambda_inverse * l_inv
+        metrics["loss_inverse"] = l_inv
+        with torch.no_grad():
+            metrics["inverse_acc"] = masked_mean((inv_logits.argmax(-1) == actions).float(), valid)
 
     z_root = z0.flatten(1)  # before any L2 normalization
     std = latent_std(z_root, cfg.variance_eps)
@@ -191,5 +238,8 @@ def compute_losses(model, batch, cfg: LossConfig) -> tuple[torch.Tensor, dict[st
         metrics["terminal_transitions"] = (valid & terminated).sum()
         metrics["latent_targets"] = latent_mask.sum()
 
-    out = {k: float(v.detach()) if torch.is_tensor(v) else float(v) for k, v in metrics.items()}
-    return total, out
+    if as_tensors:
+        return total, {k: v.detach() if torch.is_tensor(v) else torch.tensor(v) for k, v in metrics.items()}
+    values = torch.stack([torch.as_tensor(v, dtype=torch.float32, device=obs.device).detach().float()
+                          for v in metrics.values()]).tolist()  # one host transfer
+    return total, dict(zip(metrics.keys(), values))

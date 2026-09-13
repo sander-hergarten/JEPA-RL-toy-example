@@ -7,8 +7,12 @@ Tensor contracts (defaults):
 * ``QHead``:     ``[B, 64, 7, 7]`` -> ``[B, A]``
 * ``RewardHead``: ``([B, 64, 7, 7], [B])`` -> logits ``[B, 3]`` over rewards ``[-1, 0, +1]``
 * ``ContinuationHead``: ``([B, 64, 7, 7], [B])`` -> logits ``[B]``
+* ``InverseDynamicsHead``: ``([B, 64, 7, 7], [B, 64, 7, 7])`` -> action logits ``[B, A]`` (optional)
 
 Heads flatten their latent input, so they also work for other latent shapes (used by tests).
+
+With ``conv_dtype="bfloat16"`` only the convolution stacks run under autocast; their outputs are cast
+back to float32 before LayerNorm and the residual sum, so latents, heads and losses are float32.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from .config import NetworkConfig
 
 REWARD_VALUES = (-1.0, 0.0, 1.0)  # class index -> clipped reward
 
+_DTYPES = {"float32": None, "bfloat16": torch.bfloat16}
+
+
+def conv_autocast(x: torch.Tensor, dtype: torch.dtype | None):
+    """Autocast context for a conv trunk (a no-op for float32)."""
+    return torch.autocast(device_type=x.device.type, dtype=dtype, enabled=dtype is not None)
+
 
 def conv_out_size(size: int) -> int:
     for kernel, stride in ((8, 4), (4, 2), (3, 1)):
@@ -31,8 +42,9 @@ def conv_out_size(size: int) -> int:
 class Encoder(nn.Module):
     """Nature-DQN CNN followed by LayerNorm over the whole feature map. Each stack is encoded alone."""
 
-    def __init__(self, in_channels: int, channels: list[int], screen_size: int):
+    def __init__(self, in_channels: int, channels: list[int], screen_size: int, conv_dtype: str = "float32"):
         super().__init__()
+        self.compute_dtype = _DTYPES[conv_dtype]
         c1, c2, c3 = channels
         self.convs = nn.Sequential(
             nn.Conv2d(in_channels, c1, kernel_size=8, stride=4),
@@ -48,7 +60,9 @@ class Encoder(nn.Module):
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         x = obs.float() / 255.0
-        return self.norm(self.convs(x))
+        with conv_autocast(x, self.compute_dtype):
+            h = self.convs(x)
+        return self.norm(h.float())
 
 
 class ResidualBlock(nn.Module):
@@ -67,6 +81,7 @@ class Dynamics(nn.Module):
     def __init__(self, latent_shape: tuple[int, int, int], num_actions: int, cfg: NetworkConfig):
         super().__init__()
         channels = latent_shape[0]
+        self.compute_dtype = _DTYPES[cfg.conv_dtype]
         self.action_embed = nn.Embedding(num_actions, cfg.action_embed_dim)
         self.conv_in = nn.Conv2d(channels + cfg.action_embed_dim, channels, 3, padding=1)
         self.blocks = nn.Sequential(*[ResidualBlock(channels) for _ in range(cfg.dynamics_blocks)])
@@ -75,9 +90,10 @@ class Dynamics(nn.Module):
 
     def forward(self, z: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         emb = self.action_embed(action)[:, :, None, None].expand(-1, -1, *z.shape[2:])
-        h = F.relu(self.conv_in(torch.cat([z, emb], dim=1)))
-        delta = self.conv_out(self.blocks(h))
-        return self.norm(z + delta)
+        with conv_autocast(z, self.compute_dtype):
+            h = F.relu(self.conv_in(torch.cat([z, emb], dim=1)))
+            delta = self.conv_out(self.blocks(h))
+        return self.norm(z + delta.float())
 
 
 class QHead(nn.Module):
@@ -113,3 +129,14 @@ class ContinuationHead(ActionHead):
 
     def forward(self, z: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         return super().forward(z, action).squeeze(-1)
+
+
+class InverseDynamicsHead(nn.Module):
+    """MLP on [flatten(z_t), flatten(z_t+1)] -> logits over the action taken between them."""
+
+    def __init__(self, latent_dim: int, num_actions: int, hidden: int):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(2 * latent_dim, hidden), nn.ReLU(), nn.Linear(hidden, num_actions))
+
+    def forward(self, z: torch.Tensor, z_next: torch.Tensor) -> torch.Tensor:
+        return self.net(torch.cat([z.flatten(1), z_next.flatten(1)], dim=1))

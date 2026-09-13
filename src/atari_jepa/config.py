@@ -57,6 +57,15 @@ class NetworkConfig:
     q_hidden: int = 512
     reward_hidden: int = 256
     continuation_hidden: int = 256
+    inverse_hidden: int = 256
+    # Compute dtype for the conv trunks (encoder and dynamics convs) via autocast. Parameters, optimizer
+    # state, LayerNorm, MLP heads and all losses stay float32: latent cosine distances are ~1e-2, below
+    # bfloat16's resolution near 1.0 (~4e-3), so loss math must not run in bfloat16.
+    conv_dtype: str = "float32"
+
+    def __post_init__(self) -> None:
+        if self.conv_dtype not in ("float32", "bfloat16"):
+            raise ValueError(f"network.conv_dtype must be float32 or bfloat16, got {self.conv_dtype!r}")
 
 
 @dataclass
@@ -68,21 +77,29 @@ class LossConfig:
     continuation: bool = False
     variance: bool = False
     covariance: bool = False  # optional, off by default
+    # Inverse dynamics: predict a_k from a pair of consecutive latents. "real" uses online encodings of
+    # the real observations (f(x_k), f(x_k+1)); "predicted" uses (z_hat[k], z_hat[k+1]).
+    inverse: str = "none"
     lambda_q: float = 1.0
     lambda_jepa: float = 1.0
     lambda_reward: float = 1.0
     lambda_continue: float = 1.0
     lambda_var: float = 1.0
     lambda_cov: float = 0.0
+    lambda_inverse: float = 1.0
     gamma: float = 0.99
     huber_delta: float = 1.0
     variance_floor: float = 0.1
     variance_eps: float = 1.0e-4
     cosine_eps: float = 1.0e-8
 
+    def __post_init__(self) -> None:
+        if self.inverse not in ("none", "real", "predicted"):
+            raise ValueError(f"loss.inverse must be none, real or predicted, got {self.inverse!r}")
+
     @property
     def needs_rollout(self) -> bool:
-        return self.q_imagined or self.jepa or self.reward or self.continuation
+        return self.q_imagined or self.jepa or self.reward or self.continuation or self.inverse == "predicted"
 
     @property
     def trains_model(self) -> bool:
@@ -90,13 +107,14 @@ class LossConfig:
         return self.jepa and self.reward and self.continuation
 
     def variant_name(self) -> str:
+        suffix = "" if self.inverse == "none" else f"+inverse_{self.inverse}"
         if self.q_imagined and self.jepa and self.reward and self.continuation:
-            return "C_world_model"
+            return "C_world_model" + suffix
         if self.jepa and not (self.reward or self.continuation or self.q_imagined):
-            return "B_temporal_jepa"
+            return "B_temporal_jepa" + suffix
         if not self.needs_rollout:
-            return "A_q_baseline"
-        return "custom"
+            return "A_q_baseline" + suffix
+        return "custom" + suffix
 
 
 @dataclass

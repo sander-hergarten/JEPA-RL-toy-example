@@ -13,6 +13,8 @@ online and target networks (no parameter updates, so targets cannot move):
   loss of a constant class-prior predictor,
 * Q TD error on real roots and on each imagined depth,
 * action sensitivity of predictions at a fixed state,
+* an evaluation-only linear probe for the agent's movement class from frozen latents (split by episode),
+  and the held-out accuracy of the inverse-dynamics head when the checkpoint has one,
 * controller latency and the collection episodes' returns/lengths/interactions.
 
 ``--fit-fixed-batch N`` additionally checks that N optimizer steps on one held-out batch, with fixed
@@ -51,7 +53,13 @@ from .utils import configure_threads, select_device, write_json
 
 
 def collect_heldout(model, cfg: Config, env_meta: dict[str, Any], device, episodes: int, max_decisions: int,
-                    seed_base: int, epsilon: float) -> tuple[SequenceReplay, list[dict[str, Any]]]:
+                    seed_base: int, epsilon: float, record_states: bool = False
+                    ) -> tuple[SequenceReplay, list[dict[str, Any]]]:
+    """Collect fresh episodes into a private buffer.
+
+    With ``record_states`` the emulator state (ALE RAM) for every stored frame is attached to the buffer
+    as ``replay.states`` (aligned with absolute indices). It is used only by evaluation probes.
+    """
     env = make_env(cfg.env)
     check_compatible(env_meta, env.metadata())
     size = cfg.env.screen_size
@@ -59,6 +67,7 @@ def collect_heldout(model, cfg: Config, env_meta: dict[str, Any], device, episod
     controller = QController(model, device, epsilon, seed=seed_base)
     stacker = FrameStacker(cfg.env.history)
     stats = []
+    states: list[np.ndarray] = []
     total = 0
     try:
         for i in range(episodes):
@@ -68,11 +77,15 @@ def collect_heldout(model, cfg: Config, env_meta: dict[str, Any], device, episod
             frame, _ = env.reset(seed=seed_base + i)
             history = stacker.reset(frame)
             replay.start_episode(frame)
+            if record_states:
+                states.append(env.state_vector())
             ret, n, term, trunc = 0.0, 0, False, False
             while total < max_decisions:
                 action, _ = controller.act(history)
                 frame, reward, term, trunc, _ = env.step(action)
                 replay.add(action, reward, term, trunc, frame)
+                if record_states:
+                    states.append(env.state_vector())
                 history = stacker.push(frame)
                 ret += reward
                 n += 1
@@ -84,6 +97,7 @@ def collect_heldout(model, cfg: Config, env_meta: dict[str, Any], device, episod
                           "terminated": term, "truncated": trunc, "complete": term or trunc})
     finally:
         env.close()
+    replay.states = np.stack(states) if states else None  # type: ignore[attr-defined]
     return replay, stats
 
 
@@ -129,9 +143,10 @@ class _Acc:
 
 @torch.no_grad()
 def evaluate_model(model, cfg: Config, replay: SequenceReplay, device, depths: list[int], batch_size: int,
-                   seed: int = 0) -> dict[str, Any]:
+                   seed: int = 0, action_meanings: list[str] | None = None) -> dict[str, Any]:
     H = max(depths)
     A = model.num_actions
+    action_meanings = action_meanings or [str(a) for a in range(A)]
     gamma = cfg.loss.gamma
     rng = np.random.default_rng(seed)
     torch_rng = torch.Generator(device="cpu").manual_seed(seed)
@@ -147,6 +162,7 @@ def evaluate_model(model, cfg: Config, replay: SequenceReplay, device, depths: l
         mu = mu + model.target_encoder(stacks).sum(0)
     mu = (mu / len(roots)).unsqueeze(0)
     root_latents, target_root_latents, obs_std = [], [], []
+    next_latents, root_actions, inv_real_pred, inv_pred_pred = [], [], [], []
     sens_latent, sens_reward, sens_cont = [], [], []
     for start in range(0, len(roots), batch_size):
         batch = replay.gather(roots[start : start + batch_size], H).to_torch(device)
@@ -160,6 +176,9 @@ def evaluate_model(model, cfg: Config, replay: SequenceReplay, device, depths: l
         root_latents.append(z0.flatten(1).cpu())
         target_root_latents.append(model.target_encoder(obs[:, 0]).flatten(1).cpu())
         obs_std.append(obs[:, 0].float().flatten(1).cpu())
+        z1 = model.encoder(obs[:, 1])  # every root has a valid first transition, so obs 1 is real
+        next_latents.append(z1.flatten(1).cpu())
+        root_actions.append(actions[:, 0].cpu())
 
         # latent prediction with true / shuffled / random actions, and persistence
         perm = torch.randperm(B, generator=torch_rng).to(device)
@@ -167,6 +186,9 @@ def evaluate_model(model, cfg: Config, replay: SequenceReplay, device, depths: l
         z_true = unroll(model.dynamics, z0, actions, H)
         z_shuf = unroll(model.dynamics, z0, actions[perm], H)
         z_rand = unroll(model.dynamics, z0, rand_actions, H)
+        if model.inverse_head is not None:
+            inv_real_pred.append(model.inverse_head(z0, z1).argmax(-1).cpu())
+            inv_pred_pred.append(model.inverse_head(z_true[0], z_true[1]).argmax(-1).cpu())
         stack_d = lambda zs: torch.stack(  # noqa: E731
             [cosine_distance(zs[k + 1], target_z[:, k]) for k in range(H)], dim=1)
         stack_c = lambda zs: torch.stack(  # noqa: E731
@@ -287,7 +309,85 @@ def evaluate_model(model, cfg: Config, replay: SequenceReplay, device, depths: l
         "mean_continuation_prob_range": float(torch.cat(sens_cont).mean()),
         "note": "not every action must change every state immediately; compare with latent_prediction distances",
     }
+
+    labels = torch.cat(root_actions).numpy()
+    move = movement_classes(action_meanings)
+    if model.inverse_head is not None:
+        real_p, pred_p = torch.cat(inv_real_pred).numpy(), torch.cat(inv_pred_pred).numpy()
+        majority = np.bincount(labels, minlength=A).max() / len(labels)
+        out["inverse_head"] = {
+            "trained_on": cfg.loss.inverse,
+            "roots": int(len(labels)),
+            "action_acc_real_pairs": float((real_p == labels).mean()),
+            "action_acc_predicted_pairs": float((pred_p == labels).mean()),
+            "action_majority_baseline": float(majority),
+            "movement_acc_real_pairs": float((move[real_p] == move[labels]).mean()),
+            "movement_acc_predicted_pairs": float((move[pred_p] == move[labels]).mean()),
+            "note": "sticky actions and equivalent actions (e.g. FIRE vs NOOP) cap the attainable accuracy",
+        }
+    episodes = replay.episode_id[roots % replay.capacity]
+    out["movement_probe"] = movement_probe(z, torch.cat(next_latents), move[labels], episodes, seed=seed)
     return out
+
+
+def movement_classes(action_meanings: list[str]) -> np.ndarray:
+    """Horizontal movement class of each action from its meaning: 0 none, 1 RIGHT*, 2 LEFT*."""
+    return np.array([1 if "RIGHT" in m else 2 if "LEFT" in m else 0 for m in action_meanings])
+
+
+def movement_probe(z: torch.Tensor, z_next: torch.Tensor, labels: np.ndarray, groups: np.ndarray,
+                   steps: int = 500, seed: int = 0) -> dict[str, Any]:
+    """Evaluation-only linear probe: movement class of a_t from frozen online latents (z_t, z_t+1 - z_t).
+
+    Trained on the first half of the held-out episodes and tested on the rest (by episode, never by
+    random frame split). Tests whether the encoder represents what the agent controls; never trains the
+    agent.
+    """
+    ep_ids = np.unique(groups)
+    if len(ep_ids) >= 2:
+        train_eps = ep_ids[: (len(ep_ids) + 1) // 2]
+        train = np.isin(groups, train_eps)
+        split = f"episodes {train_eps.tolist()} train / {ep_ids[len(train_eps):].tolist()} test"
+    else:
+        train = np.arange(len(labels)) < int(0.7 * len(labels))
+        split = "single episode: first 70% train / last 30% test (time split)"
+    test = ~train
+    if train.sum() == 0 or test.sum() == 0:
+        return {"skipped": "not enough held-out data"}
+    x = torch.cat([z, z_next - z], dim=1).float()
+    mean, std = x[train].mean(0), x[train].std(0) + 1e-6
+    x = (x - mean) / std
+    y = torch.from_numpy(labels).long()
+    n_classes = 3
+    gen = torch.Generator().manual_seed(seed)
+    probe = torch.nn.Linear(x.shape[1], n_classes)
+    with torch.no_grad():
+        probe.weight.normal_(0, 0.01, generator=gen)
+        probe.bias.zero_()
+    opt = torch.optim.AdamW(probe.parameters(), lr=1e-2, weight_decay=1e-2)
+    tr, te = torch.from_numpy(train), torch.from_numpy(test)
+    with torch.enable_grad():
+        for _ in range(steps):
+            opt.zero_grad()
+            F.cross_entropy(probe(x[tr]), y[tr]).backward()
+            opt.step()
+    with torch.no_grad():
+        pred = probe(x).argmax(-1)
+    yt, pt = y[te].numpy(), pred[te].numpy()
+    recalls = [float((pt[yt == c] == c).mean()) for c in range(n_classes) if (yt == c).any()]
+    majority_class = np.bincount(labels[train], minlength=n_classes).argmax()
+    return {
+        "split": split,
+        "train_samples": int(train.sum()),
+        "test_samples": int(test.sum()),
+        "test_class_counts": np.bincount(yt, minlength=n_classes).tolist(),
+        "train_acc": float((pred[tr].numpy() == y[tr].numpy()).mean()),
+        "test_acc": float((pt == yt).mean()),
+        "test_balanced_acc": float(np.mean(recalls)),
+        "test_majority_baseline_acc": float((yt == majority_class).mean()),
+        "chance_balanced_acc": 1.0 / n_classes,
+        "note": "classes: 0 none, 1 RIGHT*, 2 LEFT* (from action meanings); sticky actions add label noise",
+    }
 
 
 def _latent_stats(z: torch.Tensor, floor: float, eps: float) -> dict[str, Any]:
@@ -400,7 +500,8 @@ def main(argv: list[str] | None = None) -> None:
                     "episodes": episodes_stats, "decisions": int(sum(e["decisions"] for e in episodes_stats)),
                     "transitions": replay.num_transitions(), "collect_wall_time_s": collect_s},
     }
-    result.update(evaluate_model(model, cfg, replay, device, depths, d.batch_size, seed=seed_base))
+    result.update(evaluate_model(model, cfg, replay, device, depths, d.batch_size, seed=seed_base,
+                                 action_meanings=ckpt["env"]["action_meanings"]))
     result["latency"] = controller_latency(model, cfg, replay, device)
     if args.fit_fixed_batch:
         result["fixed_batch_fit"] = fit_fixed_batch(model, cfg, replay, device, args.fit_fixed_batch,
@@ -443,6 +544,16 @@ def print_summary(r: dict[str, Any]) -> None:
     a = r["action_sensitivity_at_root"]
     print(f"action sensitivity: next-latent pairwise dist {a['mean_pairwise_cosine_distance_next_latent']:.4f}, "
           f"E[r] range {a['mean_expected_reward_range']:.4f}, P(cont) range {a['mean_continuation_prob_range']:.4f}")
+    mp = r["movement_probe"]
+    if "skipped" not in mp:
+        print(f"movement probe (frozen latents, {mp['split']}): test acc {mp['test_acc']:.3f} "
+              f"(majority {mp['test_majority_baseline_acc']:.3f}), balanced {mp['test_balanced_acc']:.3f} "
+              f"(chance {mp['chance_balanced_acc']:.3f}), train acc {mp['train_acc']:.3f}")
+    if "inverse_head" in r:
+        ih = r["inverse_head"]
+        print(f"inverse head ({ih['trained_on']}): action acc real/pred pairs {ih['action_acc_real_pairs']:.3f}/"
+              f"{ih['action_acc_predicted_pairs']:.3f} (majority {ih['action_majority_baseline']:.3f}); "
+              f"movement acc {ih['movement_acc_real_pairs']:.3f}/{ih['movement_acc_predicted_pairs']:.3f}")
     print(f"latency: {r['latency']}")
     if "fixed_batch_fit" in r:
         tr = r["fixed_batch_fit"]["trajectory"]
