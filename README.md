@@ -47,6 +47,10 @@ python -m atari_jepa.train --config configs/synthetic_smoke.yaml
 # real-Pong smoke: 1,500 decisions, tiny batch, capped eval (~20 s on CPU). Not a learning experiment.
 python -m atari_jepa.train --config configs/pong_smoke.yaml
 
+# Breakout (500k decisions; FIRE on reset and after each lost life)
+python -m atari_jepa.train --config configs/breakout/breakout_world_model_inverse_real_500k.yaml --seed 0
+MODE=parallel THREADS=2 CONFIGS="configs/breakout/breakout_world_model_inverse_real_500k.yaml configs/breakout/breakout_world_model_500k.yaml configs/breakout/breakout_temporal_jepa_500k.yaml configs/breakout/breakout_q_500k.yaml" scripts/run_matrix.sh
+
 # learning experiments (100k decisions each)
 python -m atari_jepa.train --config configs/pong_q.yaml --seed 0              # A: Q baseline
 python -m atari_jepa.train --config configs/pong_temporal_jepa.yaml --seed 0  # B: temporal JEPA
@@ -114,14 +118,15 @@ reward; `c_t = 1 - terminated_t`; `x_{t+1}` the actual history after the action,
 
 | Setting | Value |
 |---|---|
-| Game | `ALE/Pong-v5`, minimal action set: `NOOP, FIRE, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE` (read from the env) |
+| Game | `ALE/Pong-v5` (`NOOP, FIRE, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE`) or `ALE/Breakout-v5` (`NOOP, FIRE, RIGHT, LEFT`); the action set is read from the env |
 | Base env frame skip | 1 (`gym.make(..., frameskip=1)`), so frames are never skipped twice |
 | Action repeat | 4, in `atari_jepa.envs.AtariEnv` |
 | Preprocessing | max of the last two emulated frames → ALE grayscale → `cv2.INTER_AREA` resize to 84×84 |
 | History | 4 frames; an incomplete starting history repeats the episode's first frame |
 | Reset no-ops | uniform in [1, 30], NOOP looked up by meaning, RNG seeded by the reset seed |
-| FIRE on reset | off for Pong (it serves automatically: under NOOP-only play the opponent scores every ~35 decisions). A `fire_on_reset` helper looks up `FIRE` by meaning and refuses to guess an id |
-| Life-loss termination | disabled (the config rejects enabling it) |
+| FIRE on reset | off for Pong (it serves automatically: under NOOP-only play the opponent scores every ~35 decisions), on for Breakout (nothing happens otherwise). The helper looks up `FIRE` by meaning and refuses to guess an id |
+| FIRE on life loss | `fire_on_life_loss`, on for Breakout only. Breakout needs a serve after every lost life, and a greedy policy that never fires would idle to the frame limit: measured, a NOOP-only policy runs 1,200+ decisions with no reward and no terminal, versus 120 decisions and a proper terminal with the serve enabled. The press costs one emulator frame, counted in the budget and reported per step as `fire_frames` |
+| Life-loss termination | disabled (the config rejects enabling it); a lost life is not an episode boundary, only a serve |
 | Sticky actions | 0.25 for experiments, 0.0 for the smoke/debug configs, always explicit |
 | Truncation | ALE's 108,000-frame limit, plus optional `max_episode_decisions`; evaluation caps episodes at 27,000 decisions |
 | Rewards | raw return is reported; the clipped `sign(r)` is used for training |
@@ -304,7 +309,9 @@ writing `embeddings.json` next to the checkpoint:
   its base rate) and for the movement class of the action.
 
 RAM byte indices for the named Pong variables come from published annotations and are not verified
-here; the unlabelled per-byte summary does not depend on them. Score-counter bytes can leave their
+here. The Breakout ones (`player_x` 72, `ball_x` 99, `ball_y` 101) were verified here by correlating
+every byte with pixel measurements over 3,000 random-policy frames (|r| = 0.94, 0.97, 0.79). The
+unlabelled per-byte summary does not depend on any of these labels. Score-counter bytes can leave their
 training range in the test episodes, so the *mean* R² over bytes is dragged negative by extrapolation
 and the median is the number to read.
 
@@ -322,6 +329,11 @@ architecture and initialization (same seed gives the same initial encoder and Q 
 exploration schedule and update schedule. B and C cost more compute per update (see the Results).
 Evaluation: 10 episodes per training seed, reset seeds 10000–10009 for every checkpoint and controller.
 Policy-dependent trajectories diverge even with matched seeds. Results are reported per training seed.
+
+A second game, **Breakout**, runs the same comparison plus the grounded-inverse-dynamics variant
+(`configs/breakout/*_500k.yaml`, 3 seeds, 500k decisions, same protocol). It is a harder
+controllability test than Pong: the paddle is the only thing the agent moves, rewards are sparser and
+come in 1/4/7 sizes (all clipped to +1), and the game needs an explicit serve.
 
 Comparisons: A vs B asks whether temporal prediction helps Q-learning's representation. B vs C asks what
 reward, continuation and imagined-state Q supervision add. C-Q vs C-lookahead asks whether using the

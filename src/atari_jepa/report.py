@@ -40,7 +40,11 @@ def build_report(root: Path) -> str:
             r = _load(ev)
             if r is None:
                 continue
-            label = r["controller"] + (f" (H={r['planning_horizon']})" if r.get("planning_horizon", 1) not in (None, 1) else "")
+            label = r["controller"]
+            if r.get("planning_horizon", 1) not in (None, 1):
+                label += f" (H={r['planning_horizon']})"
+            if r.get("epsilon"):  # evaluation epsilon, when not the default 0
+                label += f" (eps={r['epsilon']:g})"
             evals[(run.parent.name, r["variant"], label)][r["train_seed"]] = r
             ckpt_counters = r["train_counters"]
         if ckpt_counters:

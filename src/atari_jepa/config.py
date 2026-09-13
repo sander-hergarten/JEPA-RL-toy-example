@@ -29,8 +29,13 @@ class EnvConfig:
     noop_max: int = 30
     full_action_space: bool = False
     terminal_on_life_loss: bool = False
-    # Press the action whose meaning is "FIRE" after the no-ops. Pong serves automatically, so off.
+    # Press the action whose meaning is "FIRE" after the no-ops. Pong serves automatically, so off;
+    # Breakout needs it to launch the ball.
     fire_on_reset: bool = False
+    # Press FIRE once whenever a life is lost (games like Breakout need a serve after each life, and a
+    # greedy policy that never fires would otherwise idle until the emulator's frame limit). The press is
+    # counted in the emulator-frame budget and recorded in the run metadata.
+    fire_on_life_loss: bool = False
     max_episode_frames: int = 108_000  # ALE internal truncation (emulator frames)
     max_episode_decisions: int | None = None  # external time-limit truncation (agent decisions)
     reward_transform: str = "sign"  # the 3-class reward head only supports "sign"

@@ -39,10 +39,20 @@ from .diagnostics import collect_heldout, movement_classes, movement_probe
 from .replay import SequenceReplay
 from .utils import configure_threads, select_device, write_json
 
-# Commonly cited annotations for Pong (Anand et al., "Atari Annotated RAM Interface"). Reported
-# alongside the unlabelled per-byte summary, and flagged as not verified here.
+# RAM byte annotations, reported alongside the unlabelled per-byte summary.
+# Pong: commonly cited (Anand et al., "Atari Annotated RAM Interface"), not verified here.
 PONG_RAM_LABELS = {"player_y": 51, "player_x": 46, "enemy_y": 50, "enemy_x": 45,
                    "ball_x": 49, "ball_y": 54, "enemy_score": 13, "player_score": 14}
+# Breakout: verified here by correlating each byte with pixel measurements over 3k random-policy frames
+# (paddle centroid |r| = 0.94, ball x 0.97, ball y 0.79); the rest are the cited values.
+BREAKOUT_RAM_LABELS = {"player_x": 72, "ball_x": 99, "ball_y": 101, "blocks_hit_count": 77, "score": 84}
+RAM_LABELS = {"pong": PONG_RAM_LABELS, "breakout": BREAKOUT_RAM_LABELS}
+
+
+def ram_labels_for(env_id: str) -> tuple[str, dict[str, int]]:
+    """Labelled RAM bytes for a game id, or an empty mapping when the game has no table here."""
+    game = env_id.split("/")[-1].split("-")[0].lower()
+    return game, RAM_LABELS.get(game, {})
 
 
 @torch.no_grad()
@@ -152,7 +162,8 @@ def ridge_r2(z: torch.Tensor, targets: torch.Tensor, train: np.ndarray,
     return r2, best_lam
 
 
-def state_decodability(z: torch.Tensor, states: np.ndarray, train: np.ndarray, env_kind: str) -> dict[str, Any]:
+def state_decodability(z: torch.Tensor, states: np.ndarray, train: np.ndarray, env_kind: str,
+                       env_id: str = "") -> dict[str, Any]:
     y = torch.from_numpy(states.astype(np.float64))
     varying = np.asarray(y.std(0) > 1e-6)
     r2, lam = ridge_r2(z, y, train)
@@ -173,11 +184,16 @@ def state_decodability(z: torch.Tensor, states: np.ndarray, train: np.ndarray, e
         "note": "evaluation-only probe; the emulator state is never an agent input",
     }
     if env_kind == "ale":
-        out["pong_labelled_ram"] = {
+        game, labels = ram_labels_for(env_id)
+        out["labelled_ram"] = {
             name: (float(r2[idx]) if idx < len(r2) and np.isfinite(r2[idx]) else None)
-            for name, idx in PONG_RAM_LABELS.items()
+            for name, idx in labels.items()
         }
-        out["pong_label_caveat"] = "RAM indices from published Pong annotations; not verified here"
+        out["label_caveat"] = (
+            "Breakout player_x/ball_x/ball_y verified here by pixel correlation; other indices are "
+            "published annotations" if game == "breakout" else
+            f"RAM indices from published {game} annotations; not verified here"
+        )
     return out
 
 
@@ -245,7 +261,8 @@ def analyse(model, cfg, ckpt, device, episodes: int, max_decisions: int, seed_ba
         "spectrum_online": spectrum(z),
         "spectrum_target": spectrum(z_target),
         "temporal_structure": temporal_structure(z, ep_ids, steps),
-        "state_decodability": state_decodability(z, replay.states[roots], train, ckpt["env"].get("kind", "ale")),
+        "state_decodability": state_decodability(z, replay.states[roots], train, ckpt["env"].get("kind", "ale"),
+                                                 ckpt["env"].get("id", "")),
         "reward_event_probe": reward_event_probe(z, replay, roots, train, horizon),
     }
     result["movement_probe"] = movement_probe(z, z_next, move[actions], ep_ids)
@@ -268,8 +285,8 @@ def print_summary(r: dict[str, Any]) -> None:
     d = r["state_decodability"]
     print(f"state decodability: mean R2 {d['mean_r2_over_varying']:.3f} over {d['varying_targets']} varying "
           f"{d['targets']}; {d['targets_r2_above_0.5']} above 0.5, {d['targets_r2_above_0.9']} above 0.9")
-    if "pong_labelled_ram" in d:
-        print("  labelled RAM R2: " + ", ".join(f"{k} {v:.2f}" for k, v in d["pong_labelled_ram"].items()
+    if d.get("labelled_ram"):
+        print("  labelled RAM R2: " + ", ".join(f"{k} {v:.2f}" for k, v in d["labelled_ram"].items()
                                                 if v is not None))
     rp = r["reward_event_probe"]
     if "skipped" not in rp:

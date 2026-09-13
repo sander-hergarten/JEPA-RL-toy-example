@@ -112,7 +112,9 @@ class AtariEnv:
         self._ale = self._env.unwrapped.ale
         self.action_meanings: list[str] = list(self._env.unwrapped.get_action_meanings())
         self._noop = find_action(self.action_meanings, "NOOP")
-        self._fire = find_action(self.action_meanings, "FIRE") if cfg.fire_on_reset else None
+        needs_fire = cfg.fire_on_reset or cfg.fire_on_life_loss
+        self._fire = find_action(self.action_meanings, "FIRE") if needs_fire else None
+        self._lives = 0
         h, w = self._env.observation_space.shape[:2]
         self._screens = np.zeros((2, h, w), dtype=np.uint8)
         self._rng = np.random.default_rng()
@@ -158,13 +160,14 @@ class AtariEnv:
             if term or trunc:
                 self._reset_game(None)
         info["reset_noops"] = noops
-        if self._fire is not None:
+        if self.cfg.fire_on_reset:
             _, term, trunc = self._act_frame(self._fire)
             if term or trunc:
                 self._reset_game(None)
             info["reset_fire"] = 1
         info["reset_frames"] = self.total_frames - start_frames
         self._episode_decisions = 0
+        self._lives = self._ale.lives()
         return self._processed(), info
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
@@ -177,11 +180,20 @@ class AtariEnv:
             frames += 1
             if terminated or truncated:
                 break  # screens hold the last two frames actually emitted
+        fire_frames = 0
+        if self.cfg.fire_on_life_loss and not (terminated or truncated):
+            lives = self._ale.lives()
+            if lives < self._lives:  # serve the next ball; otherwise a non-firing policy idles forever
+                reward, terminated, truncated = self._act_frame(self._fire)
+                total += reward
+                frames += 1
+                fire_frames = 1
+            self._lives = lives
         self._episode_decisions += 1
         limit = self.cfg.max_episode_decisions
         if limit is not None and self._episode_decisions >= limit and not terminated:
             truncated = True
-        return self._processed(), total, terminated, truncated, {"frames": frames}
+        return self._processed(), total, terminated, truncated, {"frames": frames, "fire_frames": fire_frames}
 
     def state_vector(self) -> np.ndarray:
         """Emulator RAM (128 bytes). Evaluation-only: never an input to the agent or its training."""
@@ -209,6 +221,7 @@ class AtariEnv:
                 "noop_max": self.cfg.noop_max,
                 "noop_distribution": "uniform in [1, noop_max], seeded per reset seed",
                 "fire_on_reset": self.cfg.fire_on_reset,
+                "fire_on_life_loss": self.cfg.fire_on_life_loss,
                 "sticky_action_prob": self.cfg.sticky_action_prob,
                 "full_action_space": self.cfg.full_action_space,
                 "terminal_on_life_loss": self.cfg.terminal_on_life_loss,

@@ -88,3 +88,33 @@ def test_fire_reset_is_counted_in_frames():
     _, info = env.reset(seed=1)
     assert info["reset_fire"] == 1 and info["reset_frames"] == info["reset_noops"] + 1
     env.close()
+
+
+@pytest.mark.skipif(not ale_available(), reason="ale-py/gymnasium not installed")
+def test_breakout_fire_on_reset_and_life_loss():
+    """Breakout needs FIRE to serve; without the life-loss serve a non-firing policy never progresses."""
+    cfg = EnvConfig(id="ALE/Breakout-v5", sticky_action_prob=0.0, fire_on_reset=True, fire_on_life_loss=True)
+    env = make_env(cfg)
+    assert env.action_meanings == ["NOOP", "FIRE", "RIGHT", "LEFT"]
+    _, info = env.reset(seed=0)
+    assert info["reset_fire"] == 1 and info["reset_frames"] == info["reset_noops"] + 1
+    noop = find_action(env.action_meanings, "NOOP")
+    fires, steps, terminated = 0, 0, False
+    for _ in range(400):
+        _, _, terminated, truncated, step_info = env.step(noop)
+        fires += step_info["fire_frames"]
+        steps += 1
+        if terminated or truncated:
+            break
+    assert terminated and fires >= 1, (steps, fires, terminated)
+    env.close()
+
+    idle = make_env(EnvConfig(id="ALE/Breakout-v5", sticky_action_prob=0.0, fire_on_reset=True))
+    idle.reset(seed=0)
+    for _ in range(400):  # same policy, no life-loss serve: the episode just stalls
+        _, _, terminated, truncated, step_info = idle.step(noop)
+        assert step_info["fire_frames"] == 0
+        if terminated or truncated:
+            break
+    assert not terminated
+    idle.close()
