@@ -462,6 +462,66 @@ These are 3-seed results with 10 evaluation episodes each, from a single game, b
 untuned prototype hyperparameters. Treat them as directions for the next experiment, not as
 conclusions.
 
+### Follow-up: inverse dynamics, to make the dynamics use the action (500k)
+
+The 500k diagnostics said C's dynamics were action-invariant, so two forms of an auxiliary
+inverse-dynamics loss were added (`configs/extended/pong_world_model_inverse_{real,pred}_500k.yaml`,
+identical to the C-500k control except `loss.inverse`):
+
+* **`real`** predicts `a_k` from online encodings of *real* consecutive observations
+  `(f(x_k), f(x_{k+1}))`, so the *encoder* must keep what the agent controls.
+* **`predicted`** predicts `a_k` from `(z_hat[k], z_hat[k+1])`, so the *dynamics* must make the action
+  recoverable from its own output.
+
+| Variant (500k) | Q-policy | One-step lookahead | Paired lookahead − Q, per seed |
+|---|---|---|---|
+| C (control) | −18.80 ± 0.45 | −16.90 ± 1.53 | +1.2, +1.0, +3.5 |
+| C + inverse `predicted` | −18.10 ± 0.93 | **−14.60 ± 0.22** | **+5.0, +2.8, +2.7** (10/0/0, 8/0/2, 7/1/2 win/tie/loss) |
+| C + inverse `real` | −13.83 ± 5.27 | −12.33 ± 6.63 | +0.0, +0.9, +3.6 |
+| (A / B, no model) | −14.60 / −12.87 | – | – |
+
+Per seed, `real` gives −21.0, −12.0, −8.5 (Q) and −21.0, −11.1, **−4.9** (lookahead). Its seed 2 with
+lookahead is the best result in this repository, and its seed 0 is the worst: it reached −14 at 100k,
+then decayed to −21 by 300k and stayed there. In that collapsed run the two controllers return
+*identical* episodes while disagreeing on 53% of decisions, which happens when the policy never moves
+the paddle (NOOP and FIRE differ as actions but not in effect). So `real` is much stronger on average
+and much less stable; three seeds cannot separate "better" from "higher variance".
+
+**The mechanism worked, and the diagnostics show it directly:**
+
+| 500k diagnostic | C | + inverse `real` | + inverse `predicted` |
+|---|---|---|---|
+| Next-latent distance between actions | 0.0004–0.0011 | **0.043–0.087** | 0.002–0.005 |
+| Depth-5 error penalty for shuffled actions | +7–13% | **+13%, +46%, +40%** | +4–9% |
+| Inverse head accuracy, real pairs (chance 0.17) | – | 0.43–0.50 | 0.15–0.29 |
+| Inverse head accuracy, predicted pairs | – | 0.53–0.56 | **0.96–1.00** |
+| Latent effective rank (of 3,136) | 13 | **140, 609, 598** | 19, 21, 10 |
+| Centered distance Δ1 | 0.05 | 0.35–0.74 | 0.04–0.06 |
+| Reward-within-8 probe AUC | 0.96 | 0.79–0.91 | 0.94 |
+| RAM R²: paddle / ball y / ball x | 0.94 / 0.89 / 0.56 | 0.91 / 0.85 / 0.41 | 0.93 / 0.87 / 0.51 |
+
+`real` raises action sensitivity by 60–200×, and it undoes the over-compression: effective rank goes
+from 13 to 140–609 of 3,136 dimensions, and consecutive latents are no longer nearly identical
+(Δ1 0.05 → 0.35–0.74). The emulator state stays decodable, but the representation is now far less
+smooth and its reward probe is weaker, which is the cost of dropping the "predict a slow background"
+solution. The two high-rank seeds are the two that played well.
+
+`predicted` does exactly what it was predicted to do: it solves its own objective perfectly (accuracy
+0.96–1.00 on predicted pairs) while barely changing the encoder, the rank, or the real-pair accuracy
+(0.15–0.29). The action is written into the prediction rather than grounded in observation. Yet it
+produces the **largest and most consistent planning gain** in the project (+2.7 to +5.0, winning 25 of
+30 paired episodes). That is worth stating carefully: with the action recoverable from `g(z, a)`,
+`max_b Q(g(z, a))` becomes an action-dependent value that was trained by the imagined-state Q loss, so
+the lookahead score is closer to a second, differently-trained action-value head than to foresight
+about the future. It improves decisions without improving the world model.
+
+**Answering the original question with all runs in hand:** predicting future representations did
+produce a model that supports better decisions than its own Q-policy (all three variants show a
+positive lookahead gain, largest with `predicted`), but no model-based configuration beat the plain
+model-free baselines at this budget (best model variant −12.3 versus B's −12.9 and A's −14.6, well
+within seed spread). Grounded action-conditioning (`real`) helped play the most and helped the
+representation the most, at the cost of stability.
+
 ### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
 Averages over seeds, from `runs/*/seed*/embeddings.json`:
@@ -476,6 +536,9 @@ Averages over seeds, from `runs/*/seed*/embeddings.json`:
 | Centered distance Δ1 / Δ10 / across episodes | 0.17 / 0.51 / 1.01 | 0.03 / 0.18 / 1.01 | 0.05 / 0.26 / 1.01 |
 | Reward within 8 decisions: AUC (base rate) | 0.95 (0.13) | 0.97 (0.13) | 0.96 (0.11) |
 | Movement probe, balanced accuracy (chance 0.33) | 0.58 | 0.63 | 0.63 |
+
+The inverse-dynamics variants are in the table in the previous section: `real` raises the effective
+rank to 140–609, `predicted` leaves it at 10–21.
 
 **The JEPA embeddings are not collapsed, and they are task-relevant.** The paddle and the ball's
 vertical position are linearly decodable at R² ≈ 0.85–0.94, an imminent reward event is readable at
@@ -497,15 +560,16 @@ what a smoothness-rewarding objective discards first.
 
 ### Suggested next experiments (from the observed failures)
 
-* **Make the dynamics use the action.** The failure is controllability, not predictability. Options:
-  an inverse-dynamics head `(z_t, z_hat_{t+1}) → a_t`, an action-contrastive term that pushes
-  `g(z, a)` away from `g(z, a')` where the real next state differs, or JEPA on centered / whitened
-  latents so the shared background and ball motion do not dominate the cosine. Re-run the
-  shuffled-action and fixed-state action-sensitivity diagnostics as the acceptance test before looking
-  at returns.
-* **Check whether the encoder represents the agent's paddle at all**, with an evaluation-only linear
-  probe for paddle and ball position. If it doesn't, no dynamics objective on these latents can be
-  action-sensitive.
+* **Stabilize `inverse: real`.** It is the most promising and the least stable: two seeds of three
+  are the best runs here, one decays from −14 to −21 after 100k. Sweep `lambda_inverse` (it is 1.0,
+  untuned, against a cosine JEPA loss ~10× smaller), and watch the effective rank and the Δ1 distance
+  during training, since its representation turns over almost completely every step (Δ1 up to 0.74).
+* **Separate "better action-values" from "foresight".** `predicted` improves decisions without
+  improving the model. Compare the lookahead controller against an explicit `Q(z, a)` head trained on
+  the same imagined-state targets: if that matches lookahead, the gain is a value-parameterization
+  effect, not planning.
+* **Recover the ball's horizontal position.** It is the worst-decoded state variable in every variant
+  (R² 0.36–0.56 against 0.85+ for the vertical), and it is what determines when the ball arrives.
 * **Guard against partial collapse and over-compression**: track the effective rank (not only the
   per-dimension variance floor) during training. At 500k the JEPA variants use ~13–20 of 3,136
   directions, and the variance floor does not see it. The optional covariance penalty is the cheapest

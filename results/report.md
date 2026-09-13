@@ -12,6 +12,10 @@
 | pong_world_model | C_world_model | q | s0: -21.0 ± 0.0 (10); s1: -20.7 ± 0.5 (10); s2: -20.7 ± 0.5 (10) | -20.80 ± 0.14 (n=3) | 0.000 | 0.34 |
 | pong_world_model_500k | C_world_model | lookahead | s0: -17.5 ± 1.4 (10); s1: -18.4 ± 2.6 (10); s2: -14.8 ± 3.6 (10) | -16.90 ± 1.53 (n=3) | 0.755 | 1.11 |
 | pong_world_model_500k | C_world_model | q | s0: -18.7 ± 2.1 (10); s1: -19.4 ± 1.3 (10); s2: -18.3 ± 3.1 (10) | -18.80 ± 0.45 (n=3) | 0.000 | 0.45 |
+| pong_world_model_inverse_pred_500k | C_world_model+inverse_predicted | lookahead | s0: -14.4 ± 2.9 (10); s1: -14.5 ± 2.7 (10); s2: -14.9 ± 2.2 (10) | -14.60 ± 0.22 (n=3) | 0.783 | 1.92 |
+| pong_world_model_inverse_pred_500k | C_world_model+inverse_predicted | q | s0: -19.4 ± 0.5 (10); s1: -17.3 ± 2.3 (10); s2: -17.6 ± 2.3 (10) | -18.10 ± 0.93 (n=3) | 0.000 | 1.33 |
+| pong_world_model_inverse_real_500k | C_world_model+inverse_real | lookahead | s0: -21.0 ± 0.0 (10); s1: -11.1 ± 2.6 (10); s2: -4.9 ± 4.4 (10) | -12.33 ± 6.63 (n=3) | 0.527 | 2.02 |
+| pong_world_model_inverse_real_500k | C_world_model+inverse_real | q | s0: -21.0 ± 0.0 (10); s1: -12.0 ± 3.4 (10); s2: -8.5 ± 4.5 (10) | -13.83 ± 5.27 (n=3) | 0.000 | 1.20 |
 
 ## Training budget and compute
 
@@ -35,6 +39,12 @@
 | pong_world_model_500k/seed0 | 500000 | 123750 | 2006387 | 48603 | 3540874 | 1.31 |
 | pong_world_model_500k/seed1 | 500000 | 123750 | 2005616 | 46988 | 3540874 | 1.31 |
 | pong_world_model_500k/seed2 | 500000 | 123750 | 2007098 | 35613 | 3540874 | 1.31 |
+| pong_world_model_inverse_pred_500k/seed0 | 500000 | 123750 | 2005363 | 56375 | 5148304 | 1.34 |
+| pong_world_model_inverse_pred_500k/seed1 | 500000 | 123750 | 2005195 | 57870 | 5148304 | 1.34 |
+| pong_world_model_inverse_pred_500k/seed2 | 500000 | 123750 | 2006750 | 36630 | 5148304 | 1.32 |
+| pong_world_model_inverse_real_500k/seed0 | 500000 | 123750 | 2005139 | 39999 | 5148304 | 1.33 |
+| pong_world_model_inverse_real_500k/seed1 | 500000 | 123750 | 2004465 | 62975 | 5148304 | 1.34 |
+| pong_world_model_inverse_real_500k/seed2 | 500000 | 123750 | 2004275 | 73469 | 5148304 | 1.35 |
 
 ## Held-out diagnostics (frozen checkpoints)
 
@@ -60,5 +70,11 @@ Centered = cosine distance after subtracting the mean held-out target latent. De
 | pong_world_model_500k/seed0 | 7194 | 0.026 / 0.041 | 0.067 / 0.168 | 0.075 | 0.122 / 0.233 | 0.3083 | 0.000 | 0.670 | 0.006 (0.077) | 0.38 (n=13) | 0.94 (n=84) | 0.0039 / 0.0104 |
 | pong_world_model_500k/seed1 | 5994 | 0.029 / 0.047 | 0.071 / 0.193 | 0.076 | 0.127 / 0.276 | 0.3207 | 0.000 | 0.634 | 0.001 (0.077) | 1.00 (n=2) | 0.98 (n=84) | 0.0037 / 0.0066 |
 | pong_world_model_500k/seed2 | 6389 | 0.034 / 0.057 | 0.082 / 0.214 | 0.089 | 0.140 / 0.257 | 0.2547 | 0.251 | 0.687 | 0.005 (0.090) | 0.63 (n=19) | 0.99 (n=84) | 0.0059 / 0.0169 |
+| pong_world_model_inverse_pred_500k/seed0 | 7011 | 0.048 / 0.069 | 0.099 / 0.241 | 0.108 | 0.165 / 0.329 | 0.3280 | 0.000 | 0.693 | 0.005 (0.073) | 0.86 (n=7) | 0.98 (n=84) | 0.0042 / 0.0100 |
+| pong_world_model_inverse_pred_500k/seed1 | 7904 | 0.030 / 0.046 | 0.071 / 0.167 | 0.077 | 0.121 / 0.230 | 0.3411 | 0.000 | 0.596 | 0.003 (0.074) | 0.94 (n=17) | 0.96 (n=84) | 0.0040 / 0.0117 |
+| pong_world_model_inverse_pred_500k/seed2 | 5570 | 0.034 / 0.048 | 0.071 / 0.145 | 0.074 | 0.116 / 0.187 | 0.2483 | 0.000 | 0.704 | 0.004 (0.096) | 1.00 (n=14) | 0.98 (n=84) | 0.0062 / 0.0158 |
+| pong_world_model_inverse_real_500k/seed0 | 4422 | 0.267 / 0.349 | 0.419 / 0.530 | 0.474 | 0.505 / 0.602 | 0.6400 | 0.016 | 0.152 | 0.006 (0.110) | 0.90 (n=10) | 0.98 (n=84) | 3.8704 / 6.0919 |
+| pong_world_model_inverse_real_500k/seed1 | 8423 | 0.398 / 0.761 | 0.475 / 0.885 | 0.692 | 0.554 / 0.910 | 0.7361 | 0.000 | 0.059 | 0.014 (0.077) | 0.77 (n=26) | 0.82 (n=84) | 0.0204 / 0.0305 |
+| pong_world_model_inverse_real_500k/seed2 | 10605 | 0.385 / 0.736 | 0.465 / 0.862 | 0.652 | 0.546 / 0.900 | 0.7379 | 0.007 | 0.052 | 0.014 (0.076) | 0.82 (n=50) | 0.79 (n=84) | 0.0235 / 0.0325 |
 
 Reward/continuation columns are meaningful only for variants that train those heads (C).
