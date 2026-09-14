@@ -29,7 +29,8 @@ not been matched). Influences: temporal latent prediction (SPR), latent planning
 
 Contents: [Setup](#setup) · [Commands](#commands) · [Environment conventions](#environment-conventions) ·
 [Model and tensor contracts](#model-and-tensor-contracts) · [Replay and masks](#replay-and-masks) ·
-[Losses](#training-objective) · [Planning](#planning) · [Diagnostics](#diagnostics) ·
+[Losses](#training-objective) · [Offline pretraining](#offline-pretraining-learn-by-observing) ·
+[Planning](#planning) · [Diagnostics](#diagnostics) ·
 [Experiments](#experiments) · [Results](#results) · [Videos](#videos) ·
 [Checkpoints](#checkpoints-and-resume) · [Tests](#tests) · [Limitations](#limitations) ·
 [Assumptions](#assumptions-and-decisions)
@@ -65,6 +66,12 @@ python -m atari_jepa.train --config configs/synthetic_smoke.yaml
 
 # real-Pong smoke: 1,500 decisions, tiny batch, capped eval (~20 s on CPU). Not a learning experiment.
 python -m atari_jepa.train --config configs/pong_smoke.yaml
+
+# "learn by observing": save frames from a trained agent, pretrain the JEPA offline, re-attach RL
+python -m atari_jepa.collect  --checkpoint runs/breakout_q_500k/seed1/checkpoint.pt --out data/breakout --decisions 200000
+python -m atari_jepa.pretrain --dataset data/breakout --out runs/pretrain_breakout --updates 100000 --latent-loss mse --anti-collapse sigreg
+python -m atari_jepa.train --config configs/breakout/breakout_world_model_500k.yaml \
+    --set train.init_from=runs/pretrain_breakout/checkpoint.pt --set train.freeze_encoder=true
 
 # the headline configuration: world model + delta target + motion channels (Breakout, 500k)
 scripts/run_ablation.sh configs/breakout/breakout_world_model_500k.yaml breakout_wm_delta_motion_500k 0 2 \
@@ -268,6 +275,31 @@ updates). The loop stores the transition and the true next
 frame, updates when due, and resets only after the final observation has been stored. It evaluates and
 checkpoints on schedule in a separately seeded environment. No augmentation.
 
+## Offline pretraining ("learn by observing")
+
+`atari_jepa.collect` saves the frames a trained agent generates (in the trainer's own replay format, so
+masks and K-step sampling are identical online and offline), and `atari_jepa.pretrain` trains the
+encoder and dynamics on that fixed dataset with **no reward, no value and no environment**:
+
+```text
+L = λ_jepa · masked_mean_k( MSE(z_hat[k+1], target_z[k+1]) , l_k )  + λ_anti · anti_collapse(z_root)
+```
+
+* **MSE instead of cosine** constrains the latent's scale as well as its direction — which makes a
+  constant latent an optimum, so anti-collapse must be explicit.
+* **`anti_collapse` = `sigreg`** (default), `vicreg`, `variance` or `none`. SIGReg draws random unit
+  directions, projects the batch onto each, scales by **one global factor** (never per direction, or the
+  test would be blind to a low-rank cloud whose individual projections are still Gaussian), and averages
+  the Epps–Pulley normality statistic. An isotropic Gaussian embedding is its minimum; constant, low-rank
+  and anisotropic embeddings are all penalized. Following the SIGReg idea in LeJEPA
+  (Balestriero & LeCun, 2025); this is a plain Epps–Pulley sketch, not their full method.
+* `train.init_from` loads the pretrained encoder/dynamics into an RL run, and `train.freeze_encoder`
+  keeps the encoder fixed so RL learns only on top of it (the strict observation-only test). Frozen
+  parameters are excluded from the optimizer, not merely zero-grad.
+
+See [the results](#learn-by-observing-offline-jepa-pretraining-then-re-attach-rl) for how this compares
+with training the JEPA jointly with RL.
+
 ## Planning
 
 `--controller q`: `argmax_a Q(encoder(x_t))`.
@@ -400,6 +432,7 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
+| 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning), but frozen features do not support control (Pong ≈ random) |
 
 What held up across both games:
 
@@ -763,6 +796,78 @@ Pick one.
 C+delta+motion −15.10 ± 4.88 / −12.30 ± 5.23, against B's −12.87 and A's −14.60. Per-seed spreads of 5–6
 points swamp the differences, and the delta target does not reproduce its Breakout advantage here. Pong
 rewards a mostly-reactive policy, and its ball was already the better-represented of the two games.
+
+### "Learn by observing": offline JEPA pretraining, then re-attach RL
+
+A suggested alternative to training everything jointly: **train the RL agent first, save its frames,
+train the JEPA offline on that fixed dataset with MSE and an explicit anti-collapse term (SIGReg), then
+re-attach the RL backend.** The argument is that it isolates representation collapse, which is easier to
+debug than a moving data distribution with many interacting knobs. Implemented as three commands:
+
+```bash
+python -m atari_jepa.collect  --checkpoint runs/breakout_q_500k/seed1/checkpoint.pt --out data/breakout \
+    --decisions 200000 --epsilons 1.0 0.1 0.01 --weights 0.2 0.6 0.2      # phase 2: save frames
+python -m atari_jepa.pretrain --dataset data/breakout --out runs/pretrain_breakout_mse_sigreg \
+    --updates 100000 --latent-loss mse --anti-collapse sigreg              # phase 3: observe only
+python -m atari_jepa.train --config configs/breakout/breakout_world_model_500k.yaml \
+    --set train.init_from=runs/pretrain_breakout_mse_sigreg/checkpoint.pt \
+    --set train.freeze_encoder=true                                        # phase 4: re-attach RL
+```
+
+Datasets: 200k decisions per game from the trained model-free agent under a mixture of exploration
+levels (ε ∈ {1.0, 0.1, 0.01}), giving 200k frames, 3.1–3.6k reward events, mean return +7.4 (Breakout)
+and −14.4 (Pong). Pretraining: 100k updates, K = 5, MSE latent loss, **SIGReg** anti-collapse (random
+unit directions, Epps–Pulley normality statistic per projection, one *global* scale so the test can see
+anisotropy), EMA target, no reward/value/environment. A delta-target variant was pretrained too.
+
+**Representations, measured before any RL** (`atari_jepa.embeddings`, held-out data from a *random*
+policy so all encoders are compared on the same distribution):
+
+| Encoder | Effective rank (of 3,136) | ball_x R² | paddle R² | Reward-event AUC |
+|---|---|---|---|---|
+| Breakout, live C (absolute target) | 6 | 0.66 | 0.86 | 1.00 |
+| Breakout, live C + delta + motion | 159 | 0.59 | −0.16 | 0.96 |
+| **Breakout, offline MSE + SIGReg** | **198** | 0.32 | −0.47 | **0.64** |
+| Pong, live C (absolute target) | 15 | 0.53 | 0.92 | 0.97 |
+| **Pong, offline MSE + SIGReg** | **100** | 0.15 | 0.68 | 0.87 |
+
+**SIGReg solves collapse outright, and needed no tuning**: effective rank 100–198 against 6–15 for the
+jointly-trained world models, at the first setting tried. That part of the advice is validated — with a
+fixed dataset and no RL losses, collapse is a single, isolated, measurable problem.
+
+**But the features are much less task-relevant.** On Breakout the offline encoder cannot linearly
+predict the paddle it controls (R² −0.47) and barely predicts an imminent reward (AUC 0.64 against 0.96–1.00
+for the live models; 0.5 is chance). The probe said so *before* any RL was run, and the RL then confirmed it:
+
+| Variant (500k, 3 seeds) | Breakout Q | Breakout lookahead | Pong Q | Pong lookahead |
+|---|---|---|---|---|
+| Random policy (reference) | +0.80 | – | −20.40 | – |
+| A: model-free baseline | +8.10 ± 0.99 | – | −14.60 ± 2.12 | – |
+| C: live-trained JEPA (absolute) | +3.60 ± 0.43 | +4.17 ± 1.08 | −18.80 ± 0.45 | −16.90 ± 1.53 |
+| **C: live + delta + motion** | **+13.63 ± 1.09** | **+25.53 ± 1.68** | −15.10 ± 4.88 | **−12.30 ± 5.23** |
+| Offline pretrain, **frozen** encoder | +2.17 ± 0.37 | +1.13 ± 0.69 | −20.97 ± 0.05 | −20.97 ± 0.05 |
+| Offline pretrain, fine-tuned | +3.90 ± 0.67 | +5.10 ± 1.27 | −18.10 ± 1.77 | −16.23 ± 0.87 |
+| Offline delta pretrain, frozen | +1.93 ± 0.45 | +1.30 ± 0.57 | −21.00 ± 0.00 | −21.00 ± 0.00 |
+
+1. **Frozen "learn by observing" fails here.** On Pong it does not beat a random policy (−20.97 against
+   −20.40); on Breakout it reaches +2.2 against +0.8 random and +8.1 for the model-free baseline. Purely
+   observational features, in this setup, do not support control.
+2. **As an initialization it is roughly neutral**: fine-tuned, it matches or slightly beats the live
+   absolute-target world model (+3.9/+5.1 vs +3.6/+4.2 on Breakout; −18.1/−16.2 vs −18.8/−16.9 on Pong),
+   and stays far below the live delta+motion model.
+3. **RL fine-tuning destroys the isotropy SIGReg established**: effective rank falls from 169 to 7 on
+   Breakout and from 80 to 20 on Pong once the Q/reward/continuation losses take over. Decoupling does
+   not protect the representation after re-attachment.
+4. **High rank is not the goal; the right prediction target is.** SIGReg maximizes spread, and spread on
+   an Atari frame is mostly background and score digits. The delta target reached rank 250 *and* a
+   decodable ball *and* triple the baseline score, by changing what is predicted rather than by
+   regularizing harder.
+
+Caveats, because this is one configuration per game: the dataset comes from a weak policy (+7.4 Breakout,
+−14.4 Pong), so "observation" never sees good play; pretraining used a single untuned setting
+(λ_anti = 1, 100k updates, 200k frames) whereas the live delta recipe emerged from several rounds of
+diagnostics; and frozen transfer is the strictest possible test. A larger or more expert dataset, a
+tuned anti-collapse weight, or a linear probe head instead of full RL might all change the picture.
 
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 

@@ -1,0 +1,14 @@
+{
+  "dataset": "data/pong",
+  "updates": 100000,
+  "wall_time_s": 629.4500522849994,
+  "latent_loss": "mse",
+  "anti_collapse": "sigreg",
+  "jepa_target": "absolute",
+  "num_actions": 6,
+  "versions": {
+    "python": "3.14.7",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3"
+  }
+}

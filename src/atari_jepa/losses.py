@@ -70,6 +70,85 @@ def reward_out_of_range(rewards: torch.Tensor, mask: torch.Tensor) -> torch.Tens
     return (~ok & mask.bool()).any()
 
 
+def mse_latent_distance(z_hat: list[torch.Tensor], target_z: torch.Tensor, target_z0: torch.Tensor | None,
+                        mode: str = "absolute") -> torch.Tensor:
+    """Per-step mean squared error between predicted and target latents, ``[B, K]``.
+
+    The alternative to the cosine distance: it constrains the scale of the latent as well as its
+    direction, which is why it needs an explicit anti-collapse term (a constant latent is an MSE
+    optimum). ``mode`` matches :func:`jepa_distances`.
+    """
+    K = target_z.shape[1]
+    if mode == "delta":
+        if target_z0 is None:
+            raise ValueError("delta target needs the target encoding of the root observation")
+        prev = [target_z0] + [target_z[:, k] for k in range(K - 1)]
+        return torch.stack([((z_hat[k + 1] - z_hat[k]) - (target_z[:, k] - prev[k])).flatten(1).pow(2).mean(1)
+                            for k in range(K)], dim=1)
+    if mode == "batch_centered":
+        mu = target_z.flatten(0, 1).mean(0, keepdim=True).detach()
+        return torch.stack([((z_hat[k + 1] - mu) - (target_z[:, k] - mu)).flatten(1).pow(2).mean(1)
+                            for k in range(K)], dim=1)
+    if mode == "absolute":
+        return torch.stack([(z_hat[k + 1] - target_z[:, k]).flatten(1).pow(2).mean(1) for k in range(K)], dim=1)
+    raise ValueError(f"unknown target mode {mode!r}")
+
+
+def epps_pulley(y: torch.Tensor) -> torch.Tensor:
+    """Epps-Pulley test statistic for standard normality, per column of ``[N, R]``.
+
+    Compares the empirical characteristic function with the standard normal one under a Gaussian
+    weight, in closed form (Epps & Pulley, 1983). Small for a standard normal sample, large otherwise
+    (a constant sample is maximally non-Gaussian).
+    """
+    n = y.shape[0]
+    d = y.unsqueeze(0) - y.unsqueeze(1)  # [N, N, R]
+    pair = torch.exp(-0.5 * d.pow(2)).sum(dim=(0, 1))  # includes j == k
+    single = torch.exp(-0.25 * y.pow(2)).sum(0)
+    return 1.0 + n / 3.0**0.5 + (pair - n) / n - 2.0**0.5 * single
+
+
+def sigreg_penalty(z_flat: torch.Tensor, n_directions: int = 64, generator: torch.Generator | None = None,
+                   eps: float = 1e-6) -> torch.Tensor:
+    """Sketched isotropic-Gaussian regularization: push the embedding toward an isotropic Gaussian.
+
+    Random unit directions are drawn, the batch is projected onto each, each projection is standardized,
+    and the Epps-Pulley normality statistic is averaged over directions. A collapsed embedding (all
+    samples equal, or all variation in a few directions) is strongly non-Gaussian along most random
+    directions, so this penalizes collapse without prescribing a per-dimension variance floor.
+
+    Follows the SIGReg idea from LeJEPA (Balestriero & LeCun, 2025); the implementation here is a plain
+    Epps-Pulley sketch, not their full method.
+    """
+    B, D = z_flat.shape
+    dirs = torch.randn(D, n_directions, device=z_flat.device, dtype=z_flat.dtype, generator=generator)
+    dirs = dirs / dirs.norm(dim=0, keepdim=True).clamp(min=eps)
+    centered = z_flat - z_flat.mean(0, keepdim=True)
+    # One global scale, never per-direction: an isotropic Gaussian has the same variance along every
+    # direction, so dividing each projection by its own std would make the test blind to a low-rank
+    # (collapsed) cloud, whose projections are individually still Gaussian.
+    scale = centered.pow(2).mean().sqrt().clamp(min=eps)
+    return epps_pulley((centered @ dirs) / scale).mean()
+
+
+def vicreg_penalty(z_flat: torch.Tensor, floor: float = 1.0, eps: float = 1e-4) -> torch.Tensor:
+    """VICReg variance hinge plus covariance term (the classic anti-collapse pair)."""
+    return variance_penalty(z_flat, floor, eps) + covariance_penalty(z_flat)
+
+
+def anti_collapse(name: str, z_flat: torch.Tensor, floor: float, eps: float,
+                  n_directions: int = 64, generator: torch.Generator | None = None) -> torch.Tensor:
+    if name == "sigreg":
+        return sigreg_penalty(z_flat, n_directions, generator)
+    if name == "vicreg":
+        return vicreg_penalty(z_flat, floor, eps)
+    if name == "variance":
+        return variance_penalty(z_flat, floor, eps)
+    if name == "none":
+        return torch.zeros((), device=z_flat.device)
+    raise ValueError(f"unknown anti-collapse term {name!r}")
+
+
 def reward_to_class(rewards: torch.Tensor, mask: torch.Tensor, check: bool = True) -> torch.Tensor:
     """Map clipped rewards {-1, 0, +1} to classes {0, 1, 2}. Refuses any other value on valid steps.
 

@@ -114,6 +114,18 @@ def test_compatibility_checks():
         check_compatible(meta, {**meta, "preprocessing": {"reward_transform": "none", "action_repeat": 4}})
 
 
+def test_compatibility_tolerates_only_inert_new_preprocessing_fields():
+    """Older checkpoints lack fields added later; that is fine only when the new field is off."""
+    old = {"id": "ALE/Pong-v5", "action_meanings": ["NOOP"], "observation_shape": [4, 84, 84],
+           "preprocessing": {"action_repeat": 4}}
+    with pytest.warns(UserWarning, match="predates"):
+        check_compatible(old, {**old, "preprocessing": {"action_repeat": 4, "fire_on_life_loss": False}})
+    with pytest.raises(ValueError):  # the same field switched on changes the environment
+        check_compatible(old, {**old, "preprocessing": {"action_repeat": 4, "fire_on_life_loss": True}})
+    with pytest.raises(ValueError):  # a changed (not new) field still fails
+        check_compatible(old, {**old, "preprocessing": {"action_repeat": 2}})
+
+
 def test_evaluate_cli_on_synthetic_checkpoint(tmp_path, capsys):
     run = tmp_path / "run"
     Trainer(tiny_config(run), run, torch.device("cpu")).run(["test"])

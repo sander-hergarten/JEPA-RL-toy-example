@@ -75,8 +75,16 @@ def check_compatible(saved: dict[str, Any], current: dict[str, Any]) -> None:
             raise ValueError(f"checkpoint/environment mismatch in {key}: {saved.get(key)!r} != {current.get(key)!r}")
     sp, cp = saved.get("preprocessing", {}), current.get("preprocessing", {})
     for key in sorted(set(sp) | set(cp)):
-        if sp.get(key) != cp.get(key):
-            raise ValueError(f"preprocessing mismatch in {key}: checkpoint {sp.get(key)!r} vs env {cp.get(key)!r}")
+        if sp.get(key) == cp.get(key):
+            continue
+        # A key the checkpoint predates is only acceptable if the current setting is the inert default
+        # (e.g. fire_on_life_loss added later, and off here). A newly *enabled* setting still errors,
+        # because it would change the environment the checkpoint was trained on.
+        if key not in sp and not cp.get(key):
+            warnings.warn(f"checkpoint predates the {key!r} preprocessing field; current value "
+                          f"{cp.get(key)!r} is the default, continuing")
+            continue
+        raise ValueError(f"preprocessing mismatch in {key}: checkpoint {sp.get(key)!r} vs env {cp.get(key)!r}")
     for key in ("gymnasium_version", "ale_py_version"):
         if saved.get(key) != current.get(key):
             warnings.warn(f"{key} differs: checkpoint {saved.get(key)} vs installed {current.get(key)}")

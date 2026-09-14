@@ -13,3 +13,6 @@ wheels/
 runs/
 .pytest_cache/
 runs_sanity/
+
+# Offline datasets (large, regenerate with atari_jepa.collect)
+data/

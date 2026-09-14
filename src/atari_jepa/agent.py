@@ -51,6 +51,16 @@ class WorldModel(nn.Module):
     def online_parameters(self) -> list[nn.Parameter]:
         return [p for name in self.online_modules for p in getattr(self, name).parameters()]
 
+    def trainable_parameters(self) -> list[nn.Parameter]:
+        """Online parameters that still require gradients (the encoder may be frozen)."""
+        return [p for p in self.online_parameters() if p.requires_grad]
+
+    def freeze_encoder(self) -> None:
+        """Keep the encoder fixed: RL then only learns on top of the pretrained representation."""
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
+        self.encoder.eval()
+
     def target_parameters(self) -> list[nn.Parameter]:
         return [p for t, _ in self.TARGET_PAIRS for p in getattr(self, t).parameters()]
 
@@ -92,7 +102,8 @@ def check_precision_supported(cfg: Config, device: torch.device) -> None:
 
 def trained_modules(cfg: Config) -> list[str]:
     """Online modules that receive gradients under the configured losses."""
-    mods = ["encoder", "q_head"]
+    mods = [] if cfg.train.freeze_encoder else ["encoder"]
+    mods.append("q_head")
     if cfg.loss.needs_rollout:
         mods.append("dynamics")
     if cfg.loss.reward:
@@ -114,7 +125,7 @@ class Learner:
         self.model = model
         self.cfg = cfg
         self.optimizer = torch.optim.Adam(
-            model.online_parameters(), lr=cfg.optim.lr, eps=cfg.optim.adam_eps
+            model.trainable_parameters(), lr=cfg.optim.lr, eps=cfg.optim.adam_eps
         )
         self.updates = 0
 
@@ -131,7 +142,7 @@ class Learner:
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(
-            self.model.online_parameters(), self.cfg.optim.grad_clip_norm
+            self.model.trainable_parameters(), self.cfg.optim.grad_clip_norm
         )
         self.optimizer.step()
         self.model.update_targets(self.cfg.optim.tau)

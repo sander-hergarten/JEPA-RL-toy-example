@@ -167,6 +167,40 @@ class TrainConfig:
     eval_episodes: int = 3
     eval_controllers: list[str] = field(default_factory=lambda: ["q"])
     eval_max_episode_decisions: int = 27_000
+    # Initialize the encoder (and dynamics) from an offline-pretrained checkpoint, and optionally keep
+    # the encoder fixed so RL only learns on top of representations trained by observation.
+    init_from: str | None = None
+    freeze_encoder: bool = False
+
+
+@dataclass
+class PretrainConfig:
+    """Offline JEPA pretraining on frames collected by an already-trained RL agent."""
+
+    dataset: str | None = None  # directory written by atari_jepa.collect
+    updates: int = 50_000
+    batch_size: int = 32
+    rollout_steps: int = 5
+    lr: float = 1.0e-4
+    adam_eps: float = 1.5e-4
+    grad_clip_norm: float = 10.0
+    tau: float = 0.99
+    latent_loss: str = "mse"  # mse | cosine
+    jepa_target: str = "absolute"  # absolute | batch_centered | delta
+    anti_collapse: str = "sigreg"  # sigreg | vicreg | variance | none
+    lambda_jepa: float = 1.0
+    lambda_anti: float = 1.0
+    sigreg_directions: int = 64
+    variance_floor: float = 0.1
+    log_every: int = 500
+
+    def __post_init__(self) -> None:
+        if self.latent_loss not in ("mse", "cosine"):
+            raise ValueError(f"pretrain.latent_loss must be mse or cosine, got {self.latent_loss!r}")
+        if self.anti_collapse not in ("sigreg", "vicreg", "variance", "none"):
+            raise ValueError(f"unknown pretrain.anti_collapse {self.anti_collapse!r}")
+        if self.jepa_target not in ("absolute", "batch_centered", "delta"):
+            raise ValueError(f"unknown pretrain.jepa_target {self.jepa_target!r}")
 
 
 @dataclass
@@ -209,6 +243,7 @@ class Config:
     eval: EvalConfig = field(default_factory=EvalConfig)
     planning: PlanningConfig = field(default_factory=PlanningConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
+    pretrain: PretrainConfig = field(default_factory=PretrainConfig)
 
     def resolved_run_dir(self) -> Path:
         if self.run_dir is not None:

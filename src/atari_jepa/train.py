@@ -57,6 +57,10 @@ class Trainer:
         self.env = make_env(cfg.env)
         self.env_meta = self.env.metadata()
         self.model = WorldModel(cfg, self.env.num_actions).to(device)
+        if cfg.train.init_from and resume is None:
+            self._init_from_pretrained(cfg.train.init_from)
+        if cfg.train.freeze_encoder:
+            self.model.freeze_encoder()
         self.learner = Learner(self.model, cfg)
         size = cfg.env.screen_size
         self.replay = SequenceReplay(cfg.replay.capacity, (size, size), cfg.env.history)
@@ -81,6 +85,22 @@ class Trainer:
         self.eval_log = JsonlWriter(run_dir / "eval.jsonl")
         if resume is not None:
             self._restore(resume)
+
+    def _init_from_pretrained(self, path: str) -> None:
+        """Load encoder/dynamics (and their EMA targets) from an offline pretraining checkpoint."""
+        ckpt = load_checkpoint(path, self.device)
+        check_compatible(ckpt["env"], self.env_meta)
+        state = ckpt["model"]
+        wanted = tuple(f"{m}." for m in ("encoder", "dynamics", "target_encoder"))
+        transferred = {k: v for k, v in state.items() if k.startswith(wanted)}
+        missing = self.model.load_state_dict(transferred, strict=False)
+        unexpected = [k for k in missing.unexpected_keys]
+        if unexpected:
+            raise ValueError(f"pretrained checkpoint has unexpected parameters: {unexpected[:5]}")
+        # printed directly: this runs during __init__, before the counters _log reads exist
+        print(f"[{self.cfg.name} s{self.cfg.seed}] initialized encoder+dynamics from {path} "
+              f"({ckpt.get('variant', 'unknown')}, {len(transferred)} tensors, "
+              f"frozen={self.cfg.train.freeze_encoder})", flush=True)
 
     # --------------------------------------------------------------------------------- persistence
     def _restore(self, ckpt: dict[str, Any]) -> None:
@@ -171,6 +191,9 @@ class Trainer:
                 "parameter_counts": counts,
                 "trained_modules": used,
                 "trained_parameters": sum(counts[m] for m in used),
+                "init_from": self.cfg.train.init_from,
+                "freeze_encoder": self.cfg.train.freeze_encoder,
+                "optimizer_parameters": sum(p.numel() for p in self.model.trainable_parameters()),
                 "command": " ".join(shlex.quote(a) for a in argv),
                 "started_at": datetime.now(timezone.utc).isoformat(),
             },
