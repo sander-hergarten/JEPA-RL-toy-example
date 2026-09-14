@@ -1,0 +1,14 @@
+{
+  "dataset": "data/breakout",
+  "updates": 100000,
+  "wall_time_s": 564.5257837200043,
+  "latent_loss": "mse",
+  "anti_collapse": "sigreg",
+  "jepa_target": "delta",
+  "num_actions": 4,
+  "versions": {
+    "python": "3.14.7",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3"
+  }
+}

@@ -432,7 +432,7 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
-| 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning), but frozen features do not support control (Pong ≈ random) |
+| 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
 What held up across both games:
 
@@ -845,19 +845,31 @@ for the live models; 0.5 is chance). The probe said so *before* any RL was run, 
 | A: model-free baseline | +8.10 ± 0.99 | – | −14.60 ± 2.12 | – |
 | C: live-trained JEPA (absolute) | +3.60 ± 0.43 | +4.17 ± 1.08 | −18.80 ± 0.45 | −16.90 ± 1.53 |
 | **C: live + delta + motion** | **+13.63 ± 1.09** | **+25.53 ± 1.68** | −15.10 ± 4.88 | **−12.30 ± 5.23** |
-| Offline pretrain, **frozen** encoder | +2.17 ± 0.37 | +1.13 ± 0.69 | −20.97 ± 0.05 | −20.97 ± 0.05 |
-| Offline pretrain, fine-tuned | +3.90 ± 0.67 | +5.10 ± 1.27 | −18.10 ± 1.77 | −16.23 ± 0.87 |
-| Offline delta pretrain, frozen | +1.93 ± 0.45 | +1.30 ± 0.57 | −21.00 ± 0.00 | −21.00 ± 0.00 |
+| Offline absolute, **frozen** encoder | +2.17 ± 0.37 | +1.13 ± 0.69 | −20.97 ± 0.05 | −20.97 ± 0.05 |
+| Offline absolute, fine-tuned | +3.90 ± 0.67 | +5.10 ± 1.27 | −18.10 ± 1.77 | −16.23 ± 0.87 |
+| Offline delta, frozen | +1.93 ± 0.45 | +1.30 ± 0.57 | −21.00 ± 0.00 | −21.00 ± 0.00 |
+| Offline **delta + motion**, frozen | +1.33 ± 0.17 | +2.27 ± 0.09 | −21.00 ± 0.00 | −20.90 ± 0.14 |
+| Offline **delta + motion**, fine-tuned | +7.97 ± 1.95 | +9.33 ± 0.82 | **−12.77 ± 3.79** | **−11.33 ± 0.76** |
 
-1. **Frozen "learn by observing" fails here.** On Pong it does not beat a random policy (−20.97 against
-   −20.40); on Breakout it reaches +2.2 against +0.8 random and +8.1 for the model-free baseline. Purely
-   observational features, in this setup, do not support control.
-2. **As an initialization it is roughly neutral**: fine-tuned, it matches or slightly beats the live
-   absolute-target world model (+3.9/+5.1 vs +3.6/+4.2 on Breakout; −18.1/−16.2 vs −18.8/−16.9 on Pong),
-   and stays far below the live delta+motion model.
-3. **RL fine-tuning destroys the isotropy SIGReg established**: effective rank falls from 169 to 7 on
-   Breakout and from 80 to 20 on Pong once the Q/reward/continuation losses take over. Decoupling does
-   not protect the representation after re-attachment.
+The last row matters: the first offline runs used the *originally specified* target, while the live
+best uses delta + motion channels, so they were not a like-for-like comparison. Pretraining with the
+same recipe as the live best closes much of the gap, and on Pong it is the best result in this
+repository.
+
+1. **Frozen "learn by observing" fails, under all three pretraining recipes.** On Pong no frozen variant
+   beats a random policy (−20.9 to −21.0 against −20.40); on Breakout they reach +1.3 to +2.2 against
+   +0.8 random and +8.1 for the model-free baseline. Purely observational features, in this setup, do
+   not support control — and notably the delta recipe does not rescue them either.
+2. **As an initialization, the recipe decides.** With the originally specified target it is roughly
+   neutral (+3.9/+5.1 vs the live +3.6/+4.2 on Breakout). With the matched delta + motion recipe it is
+   much stronger: **+7.97/+9.33 on Breakout** (double the absolute-target init) and **−12.77/−11.33 on
+   Pong, the best Pong numbers here**, beating live delta+motion (−15.10/−12.30) with a quarter of the
+   seed spread (±0.76 against ±5.23). On Breakout it still loses badly to joint training
+   (+9.33 against +25.53).
+3. **RL fine-tuning re-collapses the representation — but only for the absolute target.** Effective rank
+   falls from 169 to 7 (Breakout) and 80 to 20 (Pong) when fine-tuning the absolute-target encoder,
+   while the delta + motion encoder *keeps* its rank through RL (284 and 199). What protects a
+   representation during re-attachment is the prediction target, not the offline regularizer.
 4. **High rank is not the goal; the right prediction target is.** SIGReg maximizes spread, and spread on
    an Atari frame is mostly background and score digits. The delta target reached rank 250 *and* a
    decodable ball *and* triple the baseline score, by changing what is predicted rather than by
