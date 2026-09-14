@@ -73,6 +73,7 @@ python -m atari_jepa.train --resume runs/pong_world_model/seed0
 
 # the whole A/B/C x seeds {0,1,2} comparison, resumable, then the aggregate report
 scripts/run_matrix.sh                      # CPU: two lanes; PYTHON=... THREADS=4 to override
+nvidia-cuda-mps-control -d                      # GPU box: enable MPS first -- ~3.4x faster for parallel runs
 MODE=parallel THREADS=2 scripts/run_matrix.sh   # GPU box: all nine runs at once (used for the results)
 MODE=parallel THREADS=2 CONFIGS="configs/extended/pong_world_model_500k.yaml configs/extended/pong_temporal_jepa_500k.yaml configs/extended/pong_q_500k.yaml" scripts/run_matrix.sh   # 500k follow-up
 python -m atari_jepa.report runs           # -> runs/report.md
@@ -779,6 +780,15 @@ two real-ALE contract tests that are skipped without ale-py:
   checkpoint is always evaluated.
 * Diagnostic reward/continuation priors are fitted on the held-out depth-0 data itself, which is
   optimistic for the baseline.
+* **Run many seeds concurrently, and enable CUDA MPS when you do.** This model is tiny (one update is
+  ~20 GFLOP; batch 32, 84×84 convs, a 7×7×64 latent), so a single run reaches ~3% of an RTX 5090's fp32
+  peak and the GPU is bound by kernel launches, not arithmetic. `nvidia-smi` then reports 99%
+  "utilization" at 218 W of 600 W, because that field measures *time with a kernel resident*, not work
+  done. Without MPS, concurrent runs time-slice the GPU instead of sharing it. Measured on 18 concurrent
+  500k runs, before and after `nvidia-cuda-mps-control -d` (same runs, resumed from checkpoints):
+  **112–114 → 31–35 ms per update (≈ 3.4× faster), 218 → 545 W, memory-bandwidth utilization 11 → 71%**.
+  Clients must start *after* the daemon. This is the single largest throughput change found here —
+  larger than any precision or batch-size choice.
 * On an 8-core laptop CPU, two lanes × 4 torch threads gave the best throughput (≈ 85 min per C run).
   The reported runs used an RTX 5090 with all nine runs in parallel (≈ 30 ms per update including
   collection; 2–8 ms per update when a run has the GPU alone).
