@@ -24,7 +24,8 @@ class WorldModel(nn.Module):
         super().__init__()
         env, net = cfg.env, cfg.network
         self.num_actions = num_actions
-        self.encoder = Encoder(env.history, net.encoder_channels, env.screen_size, net.conv_dtype)
+        self.encoder = Encoder(env.history, net.encoder_channels, env.screen_size, net.conv_dtype,
+                               net.motion_channels)
         self.latent_shape = self.encoder.latent_shape
         latent_dim = int(np.prod(self.latent_shape))
         self.dynamics = Dynamics(self.latent_shape, num_actions, net)

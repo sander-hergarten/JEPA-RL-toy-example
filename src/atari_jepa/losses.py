@@ -101,6 +101,33 @@ def td_targets(
     return rewards + gamma * (1.0 - terminated.float()) * next_value
 
 
+def jepa_distances(z_hat: list[torch.Tensor], target_z: torch.Tensor, target_z0: torch.Tensor | None,
+                   mode: str, eps: float) -> torch.Tensor:
+    """Per-step temporal-prediction distances ``[B, K]`` under the configured target.
+
+    * ``absolute``: D(z_hat[k+1], target_z[k+1]). The static background dominates the cosine.
+    * ``batch_centered``: the same after subtracting the batch-mean target latent from both sides, so a
+      shared constant component cannot carry the similarity.
+    * ``delta``: D(z_hat[k+1] - z_hat[k], target_z[k+1] - target_z[k]), i.e. predict what *changes*.
+      The predicted change is taken along the model's own rollout; the target change uses consecutive
+      target encodings, with ``target_z0`` supplying the step before the first transition.
+    """
+    K = target_z.shape[1]
+    if mode == "absolute":
+        return torch.stack([cosine_distance(z_hat[k + 1], target_z[:, k], eps) for k in range(K)], dim=1)
+    if mode == "batch_centered":
+        mu = target_z.flatten(0, 1).mean(0, keepdim=True).detach()
+        return torch.stack([cosine_distance(z_hat[k + 1] - mu, target_z[:, k] - mu, eps) for k in range(K)], dim=1)
+    if mode == "delta":
+        if target_z0 is None:
+            raise ValueError("delta target needs the target encoding of the root observation")
+        prev_target = [target_z0] + [target_z[:, k] for k in range(K - 1)]
+        return torch.stack(
+            [cosine_distance(z_hat[k + 1] - z_hat[k], target_z[:, k] - prev_target[k], eps) for k in range(K)], dim=1
+        )
+    raise ValueError(f"unknown jepa_target {mode!r}")
+
+
 def unroll(dynamics: torch.nn.Module, z0: torch.Tensor, actions: torch.Tensor, steps: int) -> list[torch.Tensor]:
     """z_hat[0] = z0, z_hat[k+1] = g(z_hat[k], a_k). Predictions are never detached or replaced."""
     z_hat = [z0]
@@ -145,6 +172,7 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
     with torch.no_grad():
         next_obs = obs[:, 1 : n_targets + 1]
         target_z = encode_seq(model.target_encoder, next_obs)  # target_z[:, k] encodes obs k+1
+        target_z0 = model.target_encoder(obs[:, 0]) if (cfg.jepa and cfg.jepa_target == "delta") else None
         online_next_q = model.q_head(online_next_z[:, :q_depths].detach().flatten(0, 1)).unflatten(0, (B, q_depths))
         target_next_q = model.target_q_head(target_z[:, :q_depths].flatten(0, 1)).unflatten(0, (B, q_depths))
         next_value = double_dqn_value(online_next_q, target_next_q)
@@ -172,16 +200,17 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
     metrics["q_target_mean"] = masked_mean(y[:, 0], q_mask[:, 0])
 
     if cfg.jepa:
-        dist = torch.stack(
-            [cosine_distance(z_hat[k + 1], target_z[:, k], cfg.cosine_eps) for k in range(K)], dim=1
-        )
+        dist = jepa_distances(z_hat, target_z[:, :K], target_z0, cfg.jepa_target, cfg.cosine_eps)
         l_jepa = masked_mean(dist, latent_mask)
         total = total + cfg.lambda_jepa * l_jepa
         metrics["loss_jepa"] = l_jepa
         with torch.no_grad():
             for k in range(K):
                 metrics[f"jepa_d{k + 1}"] = masked_mean(dist[:, k], latent_mask[:, k])
-                persist = cosine_distance(z0, target_z[:, k], cfg.cosine_eps)
+                # persistence baseline under the same target convention (a delta of zero for "delta")
+                persist_hat = [z0] * (K + 1)
+                persist = jepa_distances(persist_hat, target_z[:, :K], target_z0, cfg.jepa_target,
+                                         cfg.cosine_eps)[:, k]
                 metrics[f"persist_d{k + 1}"] = masked_mean(persist, latent_mask[:, k])
 
     if cfg.reward:

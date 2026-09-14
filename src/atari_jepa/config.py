@@ -63,10 +63,16 @@ class NetworkConfig:
     reward_hidden: int = 256
     continuation_hidden: int = 256
     inverse_hidden: int = 256
+    # Append signed differences of consecutive frames in the stack as extra encoder input channels.
+    # The ball is the only fast small mover, so differencing removes the static background from the input.
+    motion_channels: bool = False
     # Compute dtype for the conv trunks (encoder and dynamics convs) via autocast. Parameters, optimizer
     # state, LayerNorm, MLP heads and all losses stay float32: latent cosine distances are ~1e-2, below
     # bfloat16's resolution near 1.0 (~4e-3), so loss math must not run in bfloat16.
     conv_dtype: str = "float32"
+
+    def encoder_in_channels(self, history: int) -> int:
+        return history + (history - 1 if self.motion_channels else 0)
 
     def __post_init__(self) -> None:
         if self.conv_dtype not in ("float32", "bfloat16"):
@@ -85,6 +91,10 @@ class LossConfig:
     # Inverse dynamics: predict a_k from a pair of consecutive latents. "real" uses online encodings of
     # the real observations (f(x_k), f(x_k+1)); "predicted" uses (z_hat[k], z_hat[k+1]).
     inverse: str = "none"
+    # What the temporal loss compares. "absolute": the latents themselves (the static background
+    # dominates the cosine). "batch_centered": latents minus the batch-mean target latent.
+    # "delta": the per-step change, so only what moves is predicted.
+    jepa_target: str = "absolute"
     lambda_q: float = 1.0
     lambda_jepa: float = 1.0
     lambda_reward: float = 1.0
@@ -101,6 +111,9 @@ class LossConfig:
     def __post_init__(self) -> None:
         if self.inverse not in ("none", "real", "predicted"):
             raise ValueError(f"loss.inverse must be none, real or predicted, got {self.inverse!r}")
+        if self.jepa_target not in ("absolute", "batch_centered", "delta"):
+            raise ValueError(
+                f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
 
     @property
     def needs_rollout(self) -> bool:
@@ -113,6 +126,8 @@ class LossConfig:
 
     def variant_name(self) -> str:
         suffix = "" if self.inverse == "none" else f"+inverse_{self.inverse}"
+        if self.jepa and self.jepa_target != "absolute":
+            suffix += f"+jepa_{self.jepa_target}"
         if self.q_imagined and self.jepa and self.reward and self.continuation:
             return "C_world_model" + suffix
         if self.jepa and not (self.reward or self.continuation or self.q_imagined):

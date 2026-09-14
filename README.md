@@ -593,6 +593,59 @@ reward probe are *worse* than C's, so the extra rank is not all task-relevant.
 Planning helps C (+0.57 over its own Q-policy) but not C + inverse `real` (−0.60), so the one-step
 lookahead gain is not consistent across games either.
 
+### Making the encoder and objective sensitive to the ball (100k ablations, both games)
+
+The probes said the ball is the worst-represented variable in every run, so two changes were added and
+tested **separately before being combined** (`configs/ball/*.yaml`, `scripts/run_ablation.sh`, variant C,
+100k decisions, 3 seeds, both games). Measurement first: the ball is *not* lost in preprocessing (in
+Pong it is ~41 px at 210x160 with intensity 110, and its region still peaks at ~112/255 after the 84x84
+resize), so this is about what the model keeps, not what the input has.
+
+* **`network.motion_channels`**: append the 3 signed differences of consecutive frames in the stack to
+  the encoder input (4 -> 7 channels). The ball is the only fast small mover, so differencing removes
+  the static background from the *input*.
+* **`loss.jepa_target`**: what the temporal loss compares. `absolute` (the latents, the default),
+  `batch_centered` (minus the batch-mean target latent), or `delta` (the per-step *change*,
+  D(z_hat[k+1] - z_hat[k], target_z[k+1] - target_z[k])), which removes the static background from the
+  *target* so only what moves has to be predicted.
+
+| Arm | Pong ball_x / ball_y R² | Pong rank | Pong Q / lookahead | Breakout ball_x / ball_y R² | Breakout rank | Breakout Q / lookahead |
+|---|---|---|---|---|---|---|
+| base (C) | 0.27 / 0.88 | 13 | −20.7 / −20.6 | −2.04 / −3.52 | 4 | 2.1 / 2.0 |
+| motion only | 0.53 / 0.94 | 13 | −20.8 / −20.6 | −3.01 / −9.79 | 4 | 2.7 / 2.6 |
+| centered only | −13.8 / −3.2 | 12 | −20.4 / −19.2 | −0.10 / −0.65 | 5 | 2.8 / 2.6 |
+| delta only | 0.34 / 0.80 | 130 | −18.9 / **−15.8** | 0.77 / 0.62 | 98 | 9.0 / 10.5 |
+| **delta + motion** | 0.48 / 0.85 | 218 | **−18.0** / −18.2 | **0.84 / 0.73** | 165 | **10.2 / 13.7** |
+
+(Negative R² means the probe does worse than predicting the training mean, i.e. the variable is not
+linearly decodable. These runs cap evaluation episodes at 5,000 decisions, so their returns are
+conservative relative to the 500k tables above.)
+
+**The delta target is the single most effective change made in this project.** It fixes every failure
+the diagnostics had identified, at one fifth of the budget of the 500k runs:
+
+* the latent stops collapsing (Breakout effective rank 4 -> 98, Pong 13 -> 130),
+* the ball becomes decodable on Breakout (R² −2.0 -> 0.77) where it previously was not at all,
+* the dynamics finally use the action *without* an inverse-dynamics term: shuffling actions costs
+  125% extra prediction error on Breakout and 34% on Pong, versus ~0% for the baseline,
+* returns improve from +2.1 to +9.0 (Breakout Q) and from −20.6 to −15.8 (Pong lookahead) at 100k
+  decisions. For scale, plain C needed 500k decisions to reach −18.8 / −16.9 on Pong, and the *best*
+  Breakout variant at 500k (the model-free baseline) scored +8.1.
+
+**Motion channels help the representation but not always the policy.** They consistently improve ball
+decodability (Pong 0.27 -> 0.53 alone, 0.34 -> 0.48 on top of delta; Breakout 0.77 -> 0.84), and
+combined with delta they give the best Breakout result here (+13.7 with lookahead, per-seed
+17.9/10.7/12.6). On Pong they do not help alone, and the combination is worse for planning than delta
+alone (−18.2 vs −15.8). So: take both on Breakout, take delta alone on Pong.
+
+**The batch-centered variant is not worth keeping.** It barely changes the rank or the shuffled-action
+penalty, and its Pong probes are wildly unstable (R² −13.8 ± 20). Centering removes a *global* mean;
+the delta target removes the static component *per sample*, which is what actually matters.
+
+These are 100k-decision, 3-seed results and the arms were not re-tuned (λ_jepa is still 1.0 against a
+target whose loss is now ~10x larger). The obvious next run is delta (+ motion on Breakout) at 500k
+against the same baselines.
+
 ### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
 Averages over seeds, from `runs/*/seed*/embeddings.json`:
@@ -639,8 +692,11 @@ what a smoothness-rewarding objective discards first.
   improving the model. Compare the lookahead controller against an explicit `Q(z, a)` head trained on
   the same imagined-state targets: if that matches lookahead, the gain is a value-parameterization
   effect, not planning.
-* **Recover the ball's horizontal position.** It is the worst-decoded state variable in every variant
-  (R² 0.36–0.56 against 0.85+ for the vertical), and it is what determines when the ball arrives.
+* **Confirm the delta target at 500k.** At 100k it already beats every 500k configuration on Breakout
+  and matches 500k C on Pong; it has not been run at the longer budget, and λ_jepa was not re-tuned for
+  the larger loss scale it produces.
+* **Reconcile delta with inverse dynamics.** Both fix action-blindness and rank collapse by different
+  routes; they have not been combined, and the combination may be redundant or complementary.
 * **Guard against partial collapse and over-compression**: track the effective rank (not only the
   per-dimension variance floor) during training. At 500k the JEPA variants use ~13–20 of 3,136
   directions, and the variance floor does not see it. The optional covariance penalty is the cheapest

@@ -2,7 +2,8 @@
 
 Tensor contracts (defaults):
 
-* ``Encoder``:   ``uint8 [B, 4, 84, 84]`` -> ``float [B, 64, 7, 7]`` (layer-normalized)
+* ``Encoder``:   ``uint8 [B, 4, 84, 84]`` -> ``float [B, 64, 7, 7]`` (layer-normalized); with
+  ``motion_channels`` the 3 signed differences of consecutive frames are appended to the input
 * ``Dynamics``:  ``([B, 64, 7, 7], int64 [B])`` -> ``[B, 64, 7, 7]``
 * ``QHead``:     ``[B, 64, 7, 7]`` -> ``[B, A]``
 * ``RewardHead``: ``([B, 64, 7, 7], [B])`` -> logits ``[B, 3]`` over rewards ``[-1, 0, +1]``
@@ -42,9 +43,14 @@ def conv_out_size(size: int) -> int:
 class Encoder(nn.Module):
     """Nature-DQN CNN followed by LayerNorm over the whole feature map. Each stack is encoded alone."""
 
-    def __init__(self, in_channels: int, channels: list[int], screen_size: int, conv_dtype: str = "float32"):
+    def __init__(self, in_channels: int, channels: list[int], screen_size: int, conv_dtype: str = "float32",
+                 motion_channels: bool = False):
         super().__init__()
         self.compute_dtype = _DTYPES[conv_dtype]
+        self.motion_channels = motion_channels
+        self.history = in_channels
+        if motion_channels:
+            in_channels += self.history - 1
         c1, c2, c3 = channels
         self.convs = nn.Sequential(
             nn.Conv2d(in_channels, c1, kernel_size=8, stride=4),
@@ -60,6 +66,8 @@ class Encoder(nn.Module):
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         x = obs.float() / 255.0
+        if self.motion_channels:  # signed frame differences: the ball is what moves
+            x = torch.cat([x, x[:, 1:] - x[:, :-1]], dim=1)
         with conv_autocast(x, self.compute_dtype):
             h = self.convs(x)
         return self.norm(h.float())

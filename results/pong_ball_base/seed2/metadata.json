@@ -1,0 +1,73 @@
+{
+  "name": "pong_ball_base",
+  "variant": "C_world_model",
+  "seed": 2,
+  "device": "cuda",
+  "torch_threads": 1,
+  "versions": {
+    "python": "3.14.7",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3"
+  },
+  "env": {
+    "kind": "ale",
+    "id": "ALE/Pong-v5",
+    "gymnasium_version": "1.3.0",
+    "ale_py_version": "0.12.1",
+    "action_meanings": [
+      "NOOP",
+      "FIRE",
+      "RIGHT",
+      "LEFT",
+      "RIGHTFIRE",
+      "LEFTFIRE"
+    ],
+    "observation_shape": [
+      4,
+      84,
+      84
+    ],
+    "preprocessing": {
+      "base_frame_skip": 1,
+      "action_repeat": 4,
+      "max_pool_last_two_frames": true,
+      "grayscale": "ALE getScreenGrayscale",
+      "resize": "cv2.INTER_AREA to 84x84",
+      "history": 4,
+      "history_padding": "repeat first episode observation",
+      "noop_max": 30,
+      "noop_distribution": "uniform in [1, noop_max], seeded per reset seed",
+      "fire_on_reset": false,
+      "fire_on_life_loss": false,
+      "sticky_action_prob": 0.25,
+      "full_action_space": false,
+      "terminal_on_life_loss": false,
+      "max_episode_frames": 108000,
+      "max_episode_decisions": null,
+      "reward_transform": "sign"
+    }
+  },
+  "num_actions": 6,
+  "latent_shape": [
+    64,
+    7,
+    7
+  ],
+  "parameter_counts": {
+    "encoder": 84256,
+    "dynamics": 237152,
+    "q_head": 1609222,
+    "reward_head": 805379,
+    "continuation_head": 804865
+  },
+  "trained_modules": [
+    "encoder",
+    "q_head",
+    "dynamics",
+    "reward_head",
+    "continuation_head"
+  ],
+  "trained_parameters": 3540874,
+  "command": "/home/sander/Documents/programming/jepa-rl-test/.venv/bin/python -m atari_jepa.train --config configs/ball/pong_wm_100k.yaml --seed 2 --run-dir runs/pong_ball_base/seed2 --auto-resume --set torch_threads=1 --set name=pong_ball_base",
+  "started_at": "2026-09-13T20:10:02.617071+00:00"
+}
