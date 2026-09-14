@@ -1,0 +1,617 @@
+{
+  "checkpoint": "runs/breakout_wm_delta_500k/seed2/checkpoint.pt",
+  "variant": "C_world_model+jepa_delta",
+  "trained_modules": [
+    "encoder",
+    "q_head",
+    "dynamics",
+    "reward_head",
+    "continuation_head"
+  ],
+  "train_counters": {
+    "decisions": 500000,
+    "updates": 123750,
+    "episodes": 1159,
+    "train_emulator_frames": 2022692,
+    "sampled_sequences": 3960000,
+    "sampled_valid_transitions": 19694030,
+    "sampled_latent_targets": 19641250,
+    "eval_decisions": 152764,
+    "eval_emulator_frames": 611607,
+    "warmup_until": 5000,
+    "resume_count": 1,
+    "wall_time_s": 5016.01342909901
+  },
+  "heldout": {
+    "seed_base": 20000,
+    "policy": "epsilon-greedy Q, epsilon=0.1",
+    "episodes": [
+      {
+        "reset_seed": 20000,
+        "raw_return": 6.0,
+        "decisions": 365,
+        "emulator_frames": 1486,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20001,
+        "raw_return": 11.0,
+        "decisions": 492,
+        "emulator_frames": 1993,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20002,
+        "raw_return": 6.0,
+        "decisions": 348,
+        "emulator_frames": 1410,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20003,
+        "raw_return": 9.0,
+        "decisions": 466,
+        "emulator_frames": 1881,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      }
+    ],
+    "decisions": 1671,
+    "transitions": 1671,
+    "collect_wall_time_s": 1.4441089079919038
+  },
+  "num_roots": 1671,
+  "depths_reported": [
+    1,
+    3,
+    5,
+    10
+  ],
+  "training_rollout_steps": 5,
+  "latent_prediction_cosine_distance": {
+    "depth_1": {
+      "extrapolative": false,
+      "count": 1667,
+      "predicted": 0.09832068396386946,
+      "persistence": 0.5021118927516834,
+      "shuffled_actions": 0.17997377134756765,
+      "random_actions": 0.18712479980963037,
+      "centered_predicted": 0.12738634872093269,
+      "centered_persistence": 0.6342814107390314,
+      "centered_shuffled_actions": 0.23549197573967873,
+      "centered_random_actions": 0.24440215251799036
+    },
+    "depth_3": {
+      "extrapolative": false,
+      "count": 1659,
+      "predicted": 0.1325591183915923,
+      "persistence": 0.6841469601452387,
+      "shuffled_actions": 0.3337179342618256,
+      "random_actions": 0.3393465284844204,
+      "centered_predicted": 0.1736124418383984,
+      "centered_persistence": 0.8666485685264583,
+      "centered_shuffled_actions": 0.44310213241899066,
+      "centered_random_actions": 0.449997865988448
+    },
+    "depth_5": {
+      "extrapolative": false,
+      "count": 1651,
+      "predicted": 0.17050242279602643,
+      "persistence": 0.7292559317283237,
+      "shuffled_actions": 0.3875687694925023,
+      "random_actions": 0.39574146263531523,
+      "centered_predicted": 0.2256582978997788,
+      "centered_persistence": 0.9249006405084658,
+      "centered_shuffled_actions": 0.5200610822941013,
+      "centered_random_actions": 0.5311432598866094
+    },
+    "depth_10": {
+      "extrapolative": true,
+      "count": 1631,
+      "predicted": 0.27131809945635676,
+      "persistence": 0.7758207853259959,
+      "shuffled_actions": 0.48544621189849496,
+      "random_actions": 0.4884416333449391,
+      "centered_predicted": 0.36325499676693296,
+      "centered_persistence": 0.985664274120974,
+      "centered_shuffled_actions": 0.6591214683434482,
+      "centered_random_actions": 0.663311392891122
+    }
+  },
+  "root_latents": {
+    "online": {
+      "samples": 1671,
+      "dims": 3136,
+      "std_quantiles_5_25_50_75_95": [
+        0.13199545443058014,
+        0.31861233711242676,
+        0.619617223739624,
+        0.9337986707687378,
+        1.8084745407104492
+      ],
+      "std_mean": 0.724219024181366,
+      "frac_below_variance_floor": 0.0009566326625645161,
+      "frac_dims_std_below_1e-3": 0.0,
+      "mean_pairwise_cosine_similarity": 0.21679583191871643
+    },
+    "target": {
+      "samples": 1671,
+      "dims": 3136,
+      "std_quantiles_5_25_50_75_95": [
+        0.13480055332183838,
+        0.3210156261920929,
+        0.6187925338745117,
+        0.9311558604240417,
+        1.8016152381896973
+      ],
+      "std_mean": 0.7252697348594666,
+      "frac_below_variance_floor": 0.0009566326625645161,
+      "frac_dims_std_below_1e-3": 0.0,
+      "mean_pairwise_cosine_similarity": 0.21423004567623138
+    }
+  },
+  "input_variation": {
+    "pixel_std_mean": 2.889824867248535,
+    "note": "if inputs barely vary, low latent variance is not evidence of collapse"
+  },
+  "reward_prediction": {
+    "depth_0": {
+      "count": 1671,
+      "class_counts": {
+        "-1": 0,
+        "0": 1639,
+        "+1": 32
+      },
+      "cross_entropy": 0.009591672535527828,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 32,
+        "precision": 0.875,
+        "recall": 0.875
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_1": {
+      "count": 1667,
+      "class_counts": {
+        "-1": 0,
+        "0": 1635,
+        "+1": 32
+      },
+      "cross_entropy": 0.017140870420224157,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 34,
+        "precision": 0.8235294117647058,
+        "recall": 0.875
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_2": {
+      "count": 1663,
+      "class_counts": {
+        "-1": 0,
+        "0": 1631,
+        "+1": 32
+      },
+      "cross_entropy": 0.02348746510431829,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 31,
+        "precision": 0.8709677419354839,
+        "recall": 0.84375
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_3": {
+      "count": 1659,
+      "class_counts": {
+        "-1": 0,
+        "0": 1627,
+        "+1": 32
+      },
+      "cross_entropy": 0.02463517732625961,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 33,
+        "precision": 0.8484848484848485,
+        "recall": 0.875
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_4": {
+      "count": 1655,
+      "class_counts": {
+        "-1": 0,
+        "0": 1623,
+        "+1": 32
+      },
+      "cross_entropy": 0.02430066563731715,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 35,
+        "precision": 0.7714285714285715,
+        "recall": 0.84375
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_5_extrapolative": {
+      "count": 1651,
+      "class_counts": {
+        "-1": 0,
+        "0": 1619,
+        "+1": 32
+      },
+      "cross_entropy": 0.034860013858702875,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 30,
+        "precision": 0.8,
+        "recall": 0.75
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_6_extrapolative": {
+      "count": 1647,
+      "class_counts": {
+        "-1": 0,
+        "0": 1615,
+        "+1": 32
+      },
+      "cross_entropy": 0.04817839724881971,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 30,
+        "precision": 0.7333333333333333,
+        "recall": 0.6875
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_7_extrapolative": {
+      "count": 1643,
+      "class_counts": {
+        "-1": 0,
+        "0": 1611,
+        "+1": 32
+      },
+      "cross_entropy": 0.038738952229256905,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 30,
+        "precision": 0.7,
+        "recall": 0.65625
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_8_extrapolative": {
+      "count": 1639,
+      "class_counts": {
+        "-1": 0,
+        "0": 1607,
+        "+1": 32
+      },
+      "cross_entropy": 0.05692472670876771,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 32,
+        "precision": 0.65625,
+        "recall": 0.65625
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    },
+    "depth_9_extrapolative": {
+      "count": 1635,
+      "class_counts": {
+        "-1": 0,
+        "0": 1603,
+        "+1": 32
+      },
+      "cross_entropy": 0.0648329884057369,
+      "prior_cross_entropy": 0.09471319798454504,
+      "event_+1": {
+        "events": 32,
+        "predicted": 27,
+        "precision": 0.7037037037037037,
+        "recall": 0.59375
+      },
+      "event_-1": {
+        "events": 0,
+        "predicted": 0,
+        "precision": NaN,
+        "recall": NaN
+      },
+      "accuracy_note": "accuracy omitted: dominated by zero-reward steps"
+    }
+  },
+  "continuation_prediction": {
+    "depth_0": {
+      "count": 1671,
+      "terminal_events": 4,
+      "bce": 0.006670172745663382,
+      "brier": 0.002099670480105759,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 2,
+        "precision": 0.5,
+        "recall": 0.25
+      }
+    },
+    "depth_1": {
+      "count": 1667,
+      "terminal_events": 4,
+      "bce": 0.009830286269390814,
+      "brier": 0.003129008707384555,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 4,
+        "precision": 0.0,
+        "recall": 0.0
+      }
+    },
+    "depth_2": {
+      "count": 1663,
+      "terminal_events": 4,
+      "bce": 0.008453194735547115,
+      "brier": 0.0028144634542379265,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 5,
+        "precision": 0.2,
+        "recall": 0.25
+      }
+    },
+    "depth_3": {
+      "count": 1659,
+      "terminal_events": 4,
+      "bce": 0.009172223119732908,
+      "brier": 0.0030534306282793424,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 5,
+        "precision": 0.2,
+        "recall": 0.25
+      }
+    },
+    "depth_4": {
+      "count": 1655,
+      "terminal_events": 4,
+      "bce": 0.009842874444262007,
+      "brier": 0.0034475962235764844,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 6,
+        "precision": 0.16666666666666666,
+        "recall": 0.25
+      }
+    },
+    "depth_5_extrapolative": {
+      "count": 1651,
+      "terminal_events": 4,
+      "bce": 0.014030619148813256,
+      "brier": 0.004491874286506681,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 8,
+        "precision": 0.125,
+        "recall": 0.25
+      }
+    },
+    "depth_6_extrapolative": {
+      "count": 1647,
+      "terminal_events": 4,
+      "bce": 0.017657427569843162,
+      "brier": 0.005755041284887016,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 12,
+        "precision": 0.08333333333333333,
+        "recall": 0.25
+      }
+    },
+    "depth_7_extrapolative": {
+      "count": 1643,
+      "terminal_events": 4,
+      "bce": 0.020804862722952996,
+      "brier": 0.006816174102603779,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 15,
+        "precision": 0.13333333333333333,
+        "recall": 0.5
+      }
+    },
+    "depth_8_extrapolative": {
+      "count": 1639,
+      "terminal_events": 4,
+      "bce": 0.025835687910815107,
+      "brier": 0.008312008886113234,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 19,
+        "precision": 0.10526315789473684,
+        "recall": 0.5
+      }
+    },
+    "depth_9_extrapolative": {
+      "count": 1635,
+      "terminal_events": 4,
+      "bce": 0.03714932489899169,
+      "brier": 0.009364458755150294,
+      "prior_bce": 0.016837068397875417,
+      "terminal": {
+        "events": 4,
+        "predicted": 22,
+        "precision": 0.09090909090909091,
+        "recall": 0.5
+      }
+    }
+  },
+  "q_td_error": {
+    "depth_0": {
+      "count": 1671,
+      "huber": 0.017006756730025434,
+      "abs_td": 0.1242642354137665,
+      "state": "real root"
+    },
+    "depth_1": {
+      "count": 1667,
+      "huber": 0.02584410125828819,
+      "abs_td": 0.12993900205249478,
+      "state": "imagined"
+    },
+    "depth_2": {
+      "count": 1663,
+      "huber": 0.032872344095593684,
+      "abs_td": 0.14193035734753542,
+      "state": "imagined"
+    },
+    "depth_3": {
+      "count": 1659,
+      "huber": 0.04183154279672647,
+      "abs_td": 0.15630093376775905,
+      "state": "imagined"
+    },
+    "depth_4": {
+      "count": 1655,
+      "huber": 0.055516424586045415,
+      "abs_td": 0.17381311528992438,
+      "state": "imagined"
+    },
+    "depth_5_extrapolative": {
+      "count": 1651,
+      "huber": 0.07101047945195874,
+      "abs_td": 0.19803158143734947,
+      "state": "imagined"
+    },
+    "depth_6_extrapolative": {
+      "count": 1647,
+      "huber": 0.0861292719099112,
+      "abs_td": 0.22204239001473877,
+      "state": "imagined"
+    },
+    "depth_7_extrapolative": {
+      "count": 1643,
+      "huber": 0.099755887533932,
+      "abs_td": 0.24263106593981212,
+      "state": "imagined"
+    },
+    "depth_8_extrapolative": {
+      "count": 1639,
+      "huber": 0.11447145125719016,
+      "abs_td": 0.26646132786292864,
+      "state": "imagined"
+    },
+    "depth_9_extrapolative": {
+      "count": 1635,
+      "huber": 0.13099881060626528,
+      "abs_td": 0.2912583488207709,
+      "state": "imagined"
+    }
+  },
+  "action_sensitivity_at_root": {
+    "mean_pairwise_cosine_distance_next_latent": 0.13009639084339142,
+    "mean_expected_reward_range": 0.0006242879899218678,
+    "mean_continuation_prob_range": 0.00017545463924761862,
+    "note": "not every action must change every state immediately; compare with latent_prediction distances"
+  },
+  "movement_probe": {
+    "split": "episodes [0, 1] train / [2, 3] test",
+    "train_samples": 857,
+    "test_samples": 814,
+    "test_class_counts": [
+      486,
+      156,
+      172
+    ],
+    "train_acc": 1.0,
+    "test_acc": 0.7063882063882064,
+    "test_balanced_acc": 0.6783890496207464,
+    "test_majority_baseline_acc": 0.597051597051597,
+    "chance_balanced_acc": 0.3333333333333333,
+    "note": "classes: 0 none, 1 RIGHT*, 2 LEFT* (from action meanings); sticky actions add label noise"
+  },
+  "latency": {
+    "q_ms_mean": 0.16794990049675107,
+    "lookahead_ms_mean": 0.6198157301696483
+  },
+  "wall_time_s": 5.616170088993385
+}

@@ -528,15 +528,22 @@ produces the **largest and most consistent planning gain** in the project (+2.7 
 the lookahead score is closer to a second, differently-trained action-value head than to foresight
 about the future. It improves decisions without improving the world model.
 
-**Cross-game summary.** On Pong, temporal prediction helped a little (B best, −12.9) and the world
-model hurt (−18.8); on Breakout the ordering reverses and the plain baseline wins by a wide margin
-(+8.1 against +3.2 for B). What *is* consistent across both games is the mechanism: the temporal
+**Cross-game summary** (before the delta target; see the section above for what it changes). On Pong,
+temporal prediction helped a little (B best, −12.9) and the world model hurt (−18.8); on Breakout the
+ordering reverses and the plain baseline wins by a wide margin (+8.1 against +3.2 for B). What *is* consistent across both games is the mechanism: the temporal
 objective compresses the latent into very few directions (effective rank 13–20 on Pong, 4–5 on
 Breakout), the dynamics ignore the action, and a grounded inverse-dynamics term fixes both
 (rank 96–600, action sensitivity up 60–1000×) while improving the model-based variant's play in both
 games. No model-based configuration beat the model-free baseline on either game at this budget.
 
-**Answering the original question with the Pong runs in hand:** predicting future representations did
+**Answering the original question.** With the default absolute target, the answer was "the model
+predicts well but does not help decisions". With the delta target on Breakout it becomes a clear yes:
+the same checkpoint plays at +13.6 with its Q-policy and +25.5 with one-step lookahead, three times the
+model-free baseline, and the gain holds in every seed. The deciding factor was not the planner, the
+architecture or the budget, but *what the temporal objective is asked to predict*. On Pong the question
+remains unanswered at this budget and seed count.
+
+**The original Pong-only reading, kept for the record:** predicting future representations did
 produce a model that supports better decisions than its own Q-policy (all three variants show a
 positive lookahead gain, largest with `predicted`), but no model-based configuration beat the plain
 model-free baselines at this budget (best model variant −12.3 versus B's −12.9 and A's −14.6, well
@@ -646,6 +653,45 @@ the delta target removes the static component *per sample*, which is what actual
 These are 100k-decision, 3-seed results and the arms were not re-tuned (λ_jepa is still 1.0 against a
 target whose loss is now ~10x larger). The obvious next run is delta (+ motion on Breakout) at 500k
 against the same baselines.
+
+### Confirmation at 500k: the delta target changes the conclusion (Breakout)
+
+The delta target and motion channels were re-run at the full 500k budget, using the *same* config bases
+as the earlier 500k runs so the numbers are directly comparable, plus a combination with the grounded
+inverse-dynamics loss. (These runs were interrupted at 50k to enable CUDA MPS and resumed from
+checkpoint; the collector restarts on resume, identically for all arms.)
+
+**Breakout, 500k, 3 seeds, evaluation ε = 0.01:**
+
+| Variant | Q-policy | One-step lookahead | Lookahead − Q, per seed | ball_x R² | rank | shuffled-action penalty |
+|---|---|---|---|---|---|---|
+| A: Q baseline | +8.10 ± 0.99 | – | – | 0.27 | 35 | ~0% |
+| B: temporal JEPA | +3.23 ± 1.20 | – | – | −44 | 4 | 9% |
+| C: world model | +3.60 ± 0.43 | +4.17 ± 1.08 | +0.6 | 0.41 | 5 | 4% |
+| C + inverse `real` | +5.17 ± 0.12 | +4.57 ± 0.19 | −0.6 | 0.45 | 96 | 88% |
+| **C + delta** | +13.70 ± 4.94 | **+25.57 ± 7.17** | +10.9, +9.4, +15.3 | 0.64 | 189 | 96% |
+| **C + delta + motion** | +13.63 ± 1.09 | **+25.53 ± 1.68** | +13.0, +9.1, +13.6 | **0.85** | 250 | 50% |
+| C + delta + motion + inverse | +6.10 ± 0.57 | +8.13 ± 0.54 | +2.2, +1.9, +2.0 | 0.67 | 320 | 56% |
+
+This is the first configuration in which the world model is clearly worth having:
+
+* **Planning beats the same checkpoint's Q-policy in every seed, by +9.1 to +15.3 points** (Q ≈ 13.6 →
+  lookahead ≈ 25.5). Earlier the best planning gain was +1 to +3.5 and often within noise.
+* **It beats the model-free baseline by ~3×** (+25.5 against +8.1). Before the delta target, no
+  model-based configuration on either game beat plain DQN.
+* **Motion channels mainly buy consistency and ball fidelity**: the same mean as delta alone but a much
+  tighter spread (±1.7 vs ±7.2 on lookahead) and the best ball decodability of any run (R² 0.85).
+
+**The two fixes are not complementary.** Combining delta with inverse dynamics is much *worse* than
+either alone (+8.1 lookahead against +25.5), even though it produces the highest effective rank (320).
+Both terms attack the same failure — an action-blind, over-compressed latent — and stacking them
+appears to over-constrain the representation: its paddle R² drops to 0.23, the worst of the delta arms.
+Pick one.
+
+**Pong stays inconclusive**, as it has throughout: C+delta −18.40 ± 3.06 (Q) / −17.13 ± 3.33 (lookahead),
+C+delta+motion −15.10 ± 4.88 / −12.30 ± 5.23, against B's −12.87 and A's −14.60. Per-seed spreads of 5–6
+points swamp the differences, and the delta target does not reproduce its Breakout advantage here. Pong
+rewards a mostly-reactive policy, and its ball was already the better-represented of the two games.
 
 ### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
