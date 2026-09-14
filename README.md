@@ -1,9 +1,26 @@
-# atari-jepa: a JEPA latent world model for Atari (Pong)
+# atari-jepa: a JEPA latent world model for Atari (Pong and Breakout)
 
 A small, inspectable PyTorch agent that learns an **action-conditioned latent world model** from Atari
 pixels by predicting future *representations* (not pixels), and uses that model for action selection.
 The question it is built to answer: does predicting future representations produce a world model that
 supports better decisions than the same network's Q-policy?
+
+**Headline (Breakout, 500k decisions, 3 seeds, ε = 0.01):**
+
+| | Q-policy | One-step lookahead |
+|---|---|---|
+| Model-free Double DQN baseline | +8.10 ± 0.99 | – |
+| World model, as first specified | +3.60 ± 0.43 | +4.17 ± 1.08 |
+| **World model + delta target + motion channels** | **+13.63 ± 1.09** | **+25.53 ± 1.68** |
+
+Planning with the learned model beats the same checkpoint's Q-policy **in every seed** (+9 to +15
+points) and roughly triples the model-free baseline. The decisive change was not the planner, the
+architecture or the budget, but **what the temporal objective is asked to predict**: with the
+originally specified "predict the next latent" target, the latent collapsed into ~4 of 3,136 directions
+and the dynamics ignored the action entirely; predicting the per-step *change* fixes both. On Pong the
+same question stays unanswered — seed spreads of 5–6 points swamp every difference. See
+[Results](#results) for the full path, including the failures that led here, and
+[Limitations](#limitations) for what 3 seeds on 2 games does not support.
 
 This is an experimental baseline, not a reproduction of a paper, and its scores are not comparable to
 published Atari 100k results (preprocessing, interaction counting, resets and evaluation protocol have
@@ -13,7 +30,9 @@ not been matched). Influences: temporal latent prediction (SPR), latent planning
 Contents: [Setup](#setup) · [Commands](#commands) · [Environment conventions](#environment-conventions) ·
 [Model and tensor contracts](#model-and-tensor-contracts) · [Replay and masks](#replay-and-masks) ·
 [Losses](#training-objective) · [Planning](#planning) · [Diagnostics](#diagnostics) ·
-[Experiments](#experiments) · [Results](#results) · [Limitations](#limitations) · [Assumptions](#assumptions-and-decisions)
+[Experiments](#experiments) · [Results](#results) · [Videos](#videos) ·
+[Checkpoints](#checkpoints-and-resume) · [Tests](#tests) · [Limitations](#limitations) ·
+[Assumptions](#assumptions-and-decisions)
 
 ## Setup
 
@@ -38,7 +57,7 @@ its versions in `metadata.json` and in the checkpoint.
 ## Commands
 
 ```bash
-# unit + integration tests (CPU, ~20 s; synthetic env/models, plus real-ALE checks when ale-py is present)
+# unit + integration tests (CPU, ~40 s; synthetic env/models, plus real-ALE checks when ale-py is present)
 python -m pytest -q
 
 # ROM-free synthetic smoke (toy "catch" game with the same contract) -- does NOT validate Atari
@@ -46,6 +65,10 @@ python -m atari_jepa.train --config configs/synthetic_smoke.yaml
 
 # real-Pong smoke: 1,500 decisions, tiny batch, capped eval (~20 s on CPU). Not a learning experiment.
 python -m atari_jepa.train --config configs/pong_smoke.yaml
+
+# the headline configuration: world model + delta target + motion channels (Breakout, 500k)
+scripts/run_ablation.sh configs/breakout/breakout_world_model_500k.yaml breakout_wm_delta_motion_500k 0 2 \
+    loss.jepa_target=delta network.motion_channels=true
 
 # Breakout (500k decisions; FIRE on reset and after each lost life)
 python -m atari_jepa.train --config configs/breakout/breakout_world_model_inverse_real_500k.yaml --seed 0
@@ -60,6 +83,11 @@ python -m atari_jepa.train --config configs/pong_world_model.yaml --seed 0    # 
 python -m atari_jepa.evaluate --checkpoint runs/pong_world_model/seed0/checkpoint.pt --controller q
 python -m atari_jepa.evaluate --checkpoint runs/pong_world_model/seed0/checkpoint.pt --controller lookahead
 python -m atari_jepa.evaluate --checkpoint RUN/checkpoint.pt --controller lookahead --horizon 3  # optional H-step beam search
+
+# record gameplay video: one panel per checkpoint/controller, shared reset seed
+python -m atari_jepa.record --out compare.mp4 \
+    --panel runs/breakout_q_500k/seed1/checkpoint.pt q "A: Q baseline" \
+    --panel runs/breakout_wm_delta_motion_500k/seed0/checkpoint.pt lookahead "C+delta+motion: lookahead"
 
 # is the latent space representative? spectrum, temporal structure, state/reward probes
 python -m atari_jepa.embeddings --checkpoint runs/pong_world_model_500k/seed0/checkpoint.pt
@@ -148,7 +176,7 @@ deterministic latent predictor can only approximate either.
 
 | Module | Signature | Architecture |
 |---|---|---|
-| Encoder `f` | `uint8[B,4,84,84] → [B,64,7,7]` | `/255` → Conv(32,8,s4)-ReLU → Conv(64,4,s2)-ReLU → Conv(64,3,s1)-ReLU → LayerNorm over (64,7,7). No BN or dropout |
+| Encoder `f` | `uint8[B,4,84,84] → [B,64,7,7]` | `/255` → Conv(32,8,s4)-ReLU → Conv(64,4,s2)-ReLU → Conv(64,3,s1)-ReLU → LayerNorm over (64,7,7). No BN or dropout. With `network.motion_channels` the 3 signed frame differences are appended first, so the input is `[B,7,84,84]` |
 | Dynamics `g` | `([B,64,7,7], int64[B]) → [B,64,7,7]` | 16-d action embedding broadcast over 7×7, concat → Conv3×3(80→64)-ReLU → 2 residual blocks → Conv3×3 → `LayerNorm(z + delta)` |
 | Q head | `[B,64,7,7] → [B,A]` | flatten → 512 ReLU → A |
 | Reward head | `(z, a) → [B,3]` | [flatten(z), one_hot(a)] → 256 ReLU → logits over rewards {−1, 0, +1} |
@@ -160,8 +188,8 @@ Planning uses `E[r] = p(+1) − p(−1)` and `P(continue) = sigmoid(logit)`. The
 needs sign-clipped rewards: `reward_to_class` raises if a valid reward is outside {−1, 0, +1}, and the
 config rejects any other `reward_transform`. Removing clipping needs a different reward head.
 
-Parameters (Pong, A = 6): encoder 84k, dynamics 237k, Q head 1.61M, reward head 805k, continuation
-head 805k. Variant A trains encoder + Q (1.69M), B adds dynamics (1.93M), C trains everything (3.54M).
+Parameters (Pong, A = 6): encoder 84k (90k with motion channels), dynamics 237k, Q head 1.61M, reward
+head 805k, continuation head 805k, optional inverse head 1.61M. Variant A trains encoder + Q (1.69M), B adds dynamics (1.93M), C trains everything (3.54M).
 The core modules are always built, so A/B/C checkpoints share one layout. The optional inverse head
 (1.61M) exists only in configs that use it, so older checkpoints load unchanged. `metadata.json` lists
 which modules receive gradients.
@@ -235,7 +263,8 @@ Gradient audit (verified in `tests/test_gradients.py` and `tests/test_inverse_an
 
 **Loop.** Random actions for 5,000 warmup decisions, then ε-greedy on the online Q with ε linear
 1.0 → 0.1 over the first 50k decisions, for **every** variant, planning included. One update every 4
-decisions, 100k decisions in total (23,750 updates). The loop stores the transition and the true next
+decisions: 100k decisions in the specified protocol (23,750 updates), 500k in the follow-ups (123,750
+updates). The loop stores the transition and the true next
 frame, updates when due, and resets only after the final observation has been stored. It evaluates and
 checkpoints on schedule in a separately seeded environment. No augmentation.
 
@@ -325,6 +354,14 @@ and the median is the number to read.
 | C: full world model | `pong_world_model.yaml` | all of the above + reward + continuation + imagined-state Q | Q |
 | C + planning | same checkpoint as C | – | one-step lookahead |
 
+Later sections add three more, each a single switch on top of C (all tested individually first):
+
+| Variant | Switch | Motivation |
+|---|---|---|
+| C + inverse `real` / `predicted` | `loss.inverse` | the dynamics were ignoring the action |
+| C + motion channels | `network.motion_channels` | the ball was the worst-represented variable |
+| **C + delta target** | `loss.jepa_target=delta` | the latent collapsed onto the static background |
+
 All variants share the environment protocol (sticky 0.25), seeds, 100k-decision budget, encoder/Q
 architecture and initialization (same seed gives the same initial encoder and Q weights), replay sampling,
 exploration schedule and update schedule. B and C cost more compute per update (see the Results).
@@ -349,6 +386,33 @@ Gymnasium 1.3.0, ale-py 0.12.1, 24-core CPU). The nine runs trained concurrently
 every run is committed in `results/<experiment>/seed<k>/`: config, metadata, training/update/eval logs,
 final evaluations and diagnostics. Checkpoints and replay buffers are left out. The generated tables
 are in `results/report.md` (`python -m atari_jepa.report runs` rebuilds them from a local `runs/`).
+
+### Summary of findings
+
+The sections below are in the order the experiments were run, because each one was motivated by a
+diagnostic failure in the previous one. In short:
+
+| # | Experiment | Outcome |
+|---|---|---|
+| 1 | Specified protocol: A/B/C, Pong, 100k | Nothing learned; no variant separable. Diagnostics show the dynamics are **action-invariant** |
+| 2 | Extended budget, Pong, 500k | All variants learn; B best (−12.9), C worst (−18.8). Planning helps C by +1 to +3.5 |
+| 3 | Inverse dynamics (grounded), Pong 500k | Action sensitivity up 60–200×, rank 13 → 140–609; best average play but one seed collapses |
+| 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
+| 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
+| 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
+
+What held up across both games:
+
+* The originally specified objective ("predict the next latent", cosine on the whole map) **compresses
+  the latent into very few directions** — effective rank 13–20 on Pong, 4–5 on Breakout out of 3,136 —
+  and leaves the dynamics **action-blind**: shuffling the action sequence changed prediction error by
+  ~0%. The per-dimension variance floor from the brief does not detect either failure; the spectrum and
+  the shuffled-action diagnostic do.
+* Two independent fixes work, and **they are not complementary** — stacking them is much worse than
+  either alone. Predicting the per-step change (`delta`) is the stronger of the two and the only change
+  that produced a model worth planning with.
+* Low prediction loss never implied a useful model. C predicted rewards nearly perfectly (CE 0.004 vs a
+  0.12 prior) while its planner was choosing between near-identical scores.
 
 ### Specified experiment: 100k decisions, sticky actions 0.25, seeds 0/1/2
 
@@ -528,13 +592,16 @@ produces the **largest and most consistent planning gain** in the project (+2.7 
 the lookahead score is closer to a second, differently-trained action-value head than to foresight
 about the future. It improves decisions without improving the world model.
 
-**Cross-game summary** (before the delta target; see the section above for what it changes). On Pong,
+**Cross-game summary — for the absolute (originally specified) target only.** The delta target
+overturns the last sentence of this paragraph; see
+[Confirmation at 500k](#confirmation-at-500k-the-delta-target-changes-the-conclusion-breakout) below. On Pong,
 temporal prediction helped a little (B best, −12.9) and the world model hurt (−18.8); on Breakout the
 ordering reverses and the plain baseline wins by a wide margin (+8.1 against +3.2 for B). What *is* consistent across both games is the mechanism: the temporal
 objective compresses the latent into very few directions (effective rank 13–20 on Pong, 4–5 on
 Breakout), the dynamics ignore the action, and a grounded inverse-dynamics term fixes both
 (rank 96–600, action sensitivity up 60–1000×) while improving the model-based variant's play in both
-games. No model-based configuration beat the model-free baseline on either game at this budget.
+games. With the absolute target, no model-based configuration beat the model-free baseline on either
+game at this budget — the delta target later did, by 3× on Breakout.
 
 **Answering the original question.** With the default absolute target, the answer was "the model
 predicts well but does not help decisions". With the delta target on Breakout it becomes a clear yes:
@@ -564,7 +631,11 @@ as well as ε = 0; at ε = 0 several evaluations hit the 27,000-decision cap.
 | C: world model | +3.60 ± 0.43 | +4.17 ± 1.08 | +2.47 ± 1.03 |
 | C + inverse `real` | +5.17 ± 0.12 | +4.57 ± 0.19 | +4.00 ± 1.10 |
 
-**On Breakout the model-free baseline wins clearly, and temporal prediction actively hurts.** A scores
+(Everything in this section uses the absolute target. With the delta target the ordering changes
+completely — see [Confirmation at 500k](#confirmation-at-500k-the-delta-target-changes-the-conclusion-breakout).)
+
+**With the absolute target, the Breakout model-free baseline wins clearly, and temporal prediction
+actively hurts.** A scores
 more than twice B. This is the opposite ordering from Pong (where B was best and A worst), from the same
 code and protocol, which is a useful reminder of how little a 3-seed, single-game result supports.
 
@@ -637,8 +708,8 @@ the diagnostics had identified, at one fifth of the budget of the 500k runs:
 * the dynamics finally use the action *without* an inverse-dynamics term: shuffling actions costs
   125% extra prediction error on Breakout and 34% on Pong, versus ~0% for the baseline,
 * returns improve from +2.1 to +9.0 (Breakout Q) and from −20.6 to −15.8 (Pong lookahead) at 100k
-  decisions. For scale, plain C needed 500k decisions to reach −18.8 / −16.9 on Pong, and the *best*
-  Breakout variant at 500k (the model-free baseline) scored +8.1.
+  decisions. For scale, plain C needed 500k decisions to reach −18.8 / −16.9 on Pong, and the best
+  Breakout variant at 500k *at that point* (the model-free baseline) scored +8.1.
 
 **Motion channels help the representation but not always the policy.** They consistently improve ball
 decodability (Pong 0.27 -> 0.53 alone, 0.34 -> 0.48 on top of delta; Breakout 0.77 -> 0.84), and
@@ -693,9 +764,10 @@ C+delta+motion −15.10 ± 4.88 / −12.30 ± 5.23, against B's −12.87 and A's
 points swamp the differences, and the delta target does not reproduce its Breakout advantage here. Pong
 rewards a mostly-reactive policy, and its ball was already the better-represented of the two games.
 
-### Latent space quality (500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
+### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
-Averages over seeds, from `runs/*/seed*/embeddings.json`:
+Averages over seeds, from `results/pong_{q,temporal_jepa,world_model}_500k/seed*/embeddings.json`
+(Breakout and the later variants have their own sections above):
 
 | | A: Q baseline | B: temporal JEPA | C: world model |
 |---|---|---|---|
@@ -725,37 +797,58 @@ the prediction objective rewards: fewer, slower directions are easier to predict
 ordering of the Q-policy results at 500k (A −14.6, B −12.9, C −18.8): C compresses the most and plays
 worst, which fits the picture of a representation optimized for predictability over control.
 
-The one consistently weak variable is the ball's **horizontal** position (R² 0.36–0.56, versus 0.85+ for
-vertical). In Pong, x is what determines *when* the ball arrives, and it moves fastest, so it is exactly
+For these A/B/C checkpoints the weakest variable is the ball's **horizontal** position (R² 0.36–0.56,
+versus 0.85+ for vertical); the delta+motion runs later reach 0.85 on it. In Pong, x is what determines *when* the ball arrives, and it moves fastest, so it is exactly
 what a smoothness-rewarding objective discards first.
 
 ### Suggested next experiments (from the observed failures)
 
-* **Stabilize `inverse: real`.** It is the most promising and the least stable: two seeds of three
-  are the best runs here, one decays from −14 to −21 after 100k. Sweep `lambda_inverse` (it is 1.0,
-  untuned, against a cosine JEPA loss ~10× smaller), and watch the effective rank and the Δ1 distance
-  during training, since its representation turns over almost completely every step (Δ1 up to 0.74).
-* **Separate "better action-values" from "foresight".** `predicted` improves decisions without
-  improving the model. Compare the lookahead controller against an explicit `Q(z, a)` head trained on
-  the same imagined-state targets: if that matches lookahead, the gain is a value-parameterization
-  effect, not planning.
-* **Confirm the delta target at 500k.** At 100k it already beats every 500k configuration on Breakout
-  and matches 500k C on Pong; it has not been run at the longer budget, and λ_jepa was not re-tuned for
-  the larger loss scale it produces.
-* **Reconcile delta with inverse dynamics.** Both fix action-blindness and rank collapse by different
-  routes; they have not been combined, and the combination may be redundant or complementary.
-* **Guard against partial collapse and over-compression**: track the effective rank (not only the
-  per-dimension variance floor) during training. At 500k the JEPA variants use ~13–20 of 3,136
-  directions, and the variance floor does not see it. The optional covariance penalty is the cheapest
-  thing to try, and the ball's horizontal position is the variable to watch.
-* **Find which added loss slows C's Q-learning.** Ablate imagined-state Q (B + reward + continuation)
-  and the reward/continuation weights, and compare Q-learning curves with B's. At 500k, C's Q-policy
-  is the worst of the three.
-* **More evaluation power for the planning effect.** The +1 to +3.5 paired lookahead gain at 500k needs
-  more seeds and episodes (and later checkpoints) before it counts as a result.
-* Only once the dynamics and heads are measurably action-sensitive: planner-driven collection and
-  multi-step (`--horizon 3`) planning. Both are implemented but not yet evaluated, because action scores
-  are still close to ties at 100k and only weakly separated at 500k.
+Ordered by what the current evidence most needs, not by size:
+
+* **More statistical weight behind the Breakout result.** It is 3 seeds × 10 episodes. The effect is
+  large (+25.5 vs +8.1) and consistent per seed, but the paired lookahead gain and the variant ordering
+  both deserve more seeds and more evaluation episodes before they are quoted as facts.
+* **Tune `lambda_jepa` for the delta target.** It is still 1.0, chosen for a loss that was ~10× smaller.
+  The delta objective changed the loss scale, not the weighting, and nothing here has been re-tuned.
+* **Explain why delta fails to transfer to Pong.** Breakout gains 3×, Pong gains nothing measurable.
+  Pong's ball was already the better-represented of the two, and its optimal policy is largely
+  reactive, so there may be little for a model to add — but this is a hypothesis, not a result.
+  Per-seed spreads of 5–6 points mean Pong needs more seeds before any claim.
+* **Do not stack the two fixes**; that is now measured (+8.1 vs +25.5). If more rank is wanted on top of
+  delta, try the covariance penalty (implemented, off) rather than a second action-grounding term.
+* **Untried encoder changes**, in order of expected value: spatial-softmax keypoints on an early,
+  higher-resolution feature map; a finer latent grid (strides 2/2/1, ~14×14 instead of 7×7); CoordConv
+  channels. The delta target attacked the *objective*; these attack the *representation's* spatial
+  resolution, which is the remaining reason a 1–2 px ball is hard to localize.
+* **Now worth running, finally:** planner-driven data collection and multi-step planning
+  (`--horizon 3`, implemented but never evaluated). Both were pointless while action scores were ties;
+  with delta checkpoints the planner's scores actually differ across actions.
+* **Separate "better action-values" from "foresight".** Still open: compare the lookahead controller
+  against an explicit `Q(z, a)` head trained on the same imagined-state targets. If that matches
+  lookahead, part of the gain is a value-parameterization effect rather than planning.
+* **Track effective rank during training**, not only the per-dimension variance floor, which missed
+  every collapse in this project (rank 3.9 on Breakout while 0% of dimensions were below the floor).
+* **A third game**, to see whether the delta result generalizes or is a property of brick-wall games
+  with one small moving object.
+
+## Videos
+
+`atari_jepa.record` plays checkpoints and writes an mp4, one panel per checkpoint/controller, sharing
+the reset seed and evaluation ε. Every *emulator* frame is captured (not only decision boundaries), so
+60 fps playback runs at true game speed; the overlay shows the live score and decision count, and a
+shorter episode freezes on its last frame while the longer one plays out.
+
+```bash
+python -m atari_jepa.record --out compare.mp4 --seed 10000 --epsilon 0.01 \
+    --panel runs/breakout_q_500k/seed1/checkpoint.pt q "A: Q baseline (model-free), 500k" \
+    --panel runs/breakout_wm_delta_motion_500k/seed0/checkpoint.pt lookahead "C + delta + motion: lookahead, 500k"
+```
+
+On that exact command (seed 10000, ε = 0.01, both 500k checkpoints) the baseline scores **+8** and ends
+after 1,184 decisions, while the delta+motion world model with lookahead scores **+30** in 1,505
+decisions. Both sit near their variants' 3-seed averages (+8.10 and +25.53), so the clip is
+representative rather than a lucky episode. Videos are not committed (a few MB each); re-render them
+with the command above.
 
 ## Checkpoints and resume
 
@@ -772,8 +865,8 @@ version changes, and evaluation always rebuilds the environment from the checkpo
 
 ## Tests
 
-`python -m pytest -q` runs 56 tests in about 25 s. On a CPU without bf16 conv backward, the
-bf16 training-step test is skipped: 55 run locally, and all 56 pass on the CUDA machine. They use a synthetic env and toy models, plus
+`python -m pytest -q` runs 69 tests in about 40 s. On a CPU without bf16 conv backward, the bf16
+training-step test is skipped: 68 run locally, and all 69 pass on the CUDA machine. They use a synthetic env and toy models, plus
 two real-ALE contract tests that are skipped without ale-py:
 
 * replay: causal stacks, first-frame padding, eviction with absolute ordering, no sequence crossing a reset, partial episodes and collection boundaries, persistence,
@@ -786,7 +879,9 @@ two real-ALE contract tests that are skipped without ale-py:
 * fixed-batch fitting reduces JEPA and reward loss with fixed targets; diagnostics produce finite metrics and nonconstant latents,
 * embeddings: the spectrum separates full-rank from low-rank latents and flags a constant one, temporal distance grows with the gap, and the evaluation-only state capture feeds probes that recover the toy game's true state,
 * inverse dynamics: gradient routing for both forms, padding invariance, old configs and checkpoints loading unchanged; the movement probe separates a planted signal and fails on shuffled labels,
-* bfloat16: forward matches fp32 with shared weights and keeps fp32 latents; a training step gives fp32 gradients (CUDA); the single-transfer update still rejects unclipped rewards.
+* bfloat16: forward matches fp32 with shared weights and keeps fp32 latents; a training step gives fp32 gradients (CUDA); the single-transfer update still rejects unclipped rewards,
+* ball sensitivity: motion channels extend the input and vanish on a static scene; the centered and delta targets are invariant to a shared constant component while the absolute target is not; a no-change model scores the worst possible delta distance; both targets still train through the rollout,
+* video: panels stack with the shorter one frozen, and the writer produces a readable file.
 
 ## Limitations
 
@@ -805,11 +900,14 @@ two real-ALE contract tests that are skipped without ale-py:
 * **Model exploitation.** Lookahead maximizes over learned reward/continuation/Q predictions at
   imagined states. Any optimistic error in `max_b Q(g(z,a))` is selected for. That is why planning is
   compared against the same checkpoint's Q-policy, not assumed to help.
-* **Budget.** At 100k decisions (≈ 400k frames) with one update per 4 decisions, no variant learned
-  Pong. The 500k follow-up shows learning but only 3 seeds × 10 episodes, and the differences between
-  variants are within the spread between seeds except for C's slower Q-learning.
-* Single environment and single game; no MCTS, stochastic latents, augmentation or planner-driven
-  collection.
+* **Budget and statistical power.** At 100k decisions (≈ 400k frames) with one update per 4 decisions,
+  no variant learned Pong. Everything here is 3 seeds × 10 evaluation episodes. On Pong that is far too
+  little: the seed spread (5–6 points) swamps every difference between variants. On Breakout the
+  delta-target effect is much larger than the spread (+25.5 ± 1.7 against +8.1 ± 1.0, and planning wins
+  in every seed), but it is still 3 seeds on one game.
+* Two games (Pong, Breakout), one environment instance per run; no MCTS, stochastic latents,
+  augmentation or planner-driven collection. Multi-step planning (`--horizon`) is implemented but has
+  not been evaluated.
 
 ## Assumptions and decisions
 
@@ -821,8 +919,8 @@ two real-ALE contract tests that are skipped without ale-py:
 * Adam eps = 1.5e-4 (the Rainbow/SPR convention). The brief fixed only the learning rate.
 * The dynamics output conv uses the default init (the model does not start as the identity/persistence map).
 * The variance floor is computed on online root latents only, as specified, so it never reaches the dynamics.
-* The in-training evaluation uses 3 episodes per controller at 25k-decision intervals, on the same
-  reset seeds as the first 3 final-evaluation episodes. No checkpoint is selected on it: the final
+* The in-training evaluation uses 3 episodes per controller, on the same reset seeds as the first 3
+  final-evaluation episodes: every 25k decisions in the 100k configs, every 100k in the 500k ones. No checkpoint is selected on it: the final
   checkpoint is always evaluated.
 * Diagnostic reward/continuation priors are fitted on the held-out depth-0 data itself, which is
   optimistic for the baseline.
