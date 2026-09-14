@@ -121,6 +121,7 @@ class AtariEnv:
         self._seeded = False
         self._episode_decisions = 0
         self.total_frames = 0  # emulator frames, including reset no-ops and FIRE presses
+        self.frame_sink = None  # optional callable(rgb screen) per emulator frame, for recording
 
     @property
     def num_actions(self) -> int:
@@ -129,6 +130,8 @@ class AtariEnv:
     def _act_frame(self, action: int) -> tuple[float, bool, bool]:
         _, reward, terminated, truncated, _ = self._env.step(action)
         self.total_frames += 1
+        if self.frame_sink is not None:
+            self.frame_sink(self._ale.getScreenRGB())
         self._screens[0] = self._screens[1]
         self._ale.getScreenGrayscale(self._screens[1])
         return float(reward), bool(terminated), bool(truncated)
