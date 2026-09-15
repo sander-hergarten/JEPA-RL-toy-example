@@ -1,0 +1,71 @@
+{
+  "name": "breakout_long_q",
+  "variant": "A_q_baseline",
+  "seed": 2,
+  "device": "cuda",
+  "torch_threads": 1,
+  "versions": {
+    "python": "3.14.7",
+    "torch": "2.14.0+cu130",
+    "numpy": "2.5.3"
+  },
+  "env": {
+    "kind": "ale",
+    "id": "ALE/Breakout-v5",
+    "gymnasium_version": "1.3.0",
+    "ale_py_version": "0.12.1",
+    "action_meanings": [
+      "NOOP",
+      "FIRE",
+      "RIGHT",
+      "LEFT"
+    ],
+    "observation_shape": [
+      4,
+      84,
+      84
+    ],
+    "preprocessing": {
+      "base_frame_skip": 1,
+      "action_repeat": 4,
+      "max_pool_last_two_frames": true,
+      "grayscale": "ALE getScreenGrayscale",
+      "resize": "cv2.INTER_AREA to 84x84",
+      "history": 4,
+      "history_padding": "repeat first episode observation",
+      "noop_max": 30,
+      "noop_distribution": "uniform in [1, noop_max], seeded per reset seed",
+      "fire_on_reset": true,
+      "fire_on_life_loss": true,
+      "sticky_action_prob": 0.25,
+      "full_action_space": false,
+      "terminal_on_life_loss": false,
+      "max_episode_frames": 108000,
+      "max_episode_decisions": null,
+      "reward_transform": "sign"
+    }
+  },
+  "num_actions": 4,
+  "latent_shape": [
+    64,
+    7,
+    7
+  ],
+  "parameter_counts": {
+    "encoder": 84256,
+    "dynamics": 237120,
+    "q_head": 1608196,
+    "reward_head": 804867,
+    "continuation_head": 804353
+  },
+  "trained_modules": [
+    "encoder",
+    "q_head"
+  ],
+  "trained_parameters": 1692452,
+  "init_from": null,
+  "freeze_encoder": false,
+  "optimizer_parameters": 3538792,
+  "command": "/home/sander/Documents/programming/jepa-rl-test/.venv/bin/python -m atari_jepa.train --config configs/long/breakout_long_q.yaml --seed 2 --auto-resume --set torch_threads=1",
+  "started_at": "2026-09-14T20:19:52.291219+00:00"
+}

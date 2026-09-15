@@ -5,13 +5,17 @@ pixels by predicting future *representations* (not pixels), and uses that model 
 The question it is built to answer: does predicting future representations produce a world model that
 supports better decisions than the same network's Q-policy?
 
-**Headline (Breakout, 500k decisions, 3 seeds, ε = 0.01):**
+**Headline (Breakout, 1.5M decisions, 3 seeds, ε = 0.01):**
 
 | | Q-policy | One-step lookahead |
 |---|---|---|
-| Model-free Double DQN baseline | +8.10 ± 0.99 | – |
-| World model, as first specified | +3.60 ± 0.43 | +4.17 ± 1.08 |
-| **World model + delta target + motion channels** | **+13.63 ± 1.09** | **+25.53 ± 1.68** |
+| Model-free Double DQN baseline | +13.67 ± 2.10 | – |
+| **World model + delta target + motion channels** | **+17.30 ± 3.06** | **+38.77 ± 3.19** |
+| Offline-pretrained ("learn by observing"), fine-tuned | +11.57 ± 0.81 | +20.67 ± 2.32 |
+| Offline-pretrained, frozen encoder | +1.73 ± 0.21 | +1.97 ± 0.25 |
+
+At the originally specified 500k budget the same joint model scores +13.63 / +25.53 against +8.10 for
+the baseline, so the advantage grows with budget rather than washing out.
 
 Planning with the learned model beats the same checkpoint's Q-policy **in every seed** (+9 to +15
 points) and roughly triples the model-free baseline. The decisive change was not the planner, the
@@ -432,6 +436,7 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
+| 8 | Long run: 1.5M decisions, Breakout, 4 variants | Joint delta+motion reaches **+38.8 with lookahead** (2.8× model-free); offline fine-tuned +20.7; frozen stays flat at +2 for the whole run |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
 What held up across both games:
@@ -880,6 +885,47 @@ Caveats, because this is one configuration per game: the dataset comes from a we
 (λ_anti = 1, 100k updates, 200k frames) whereas the live delta recipe emerged from several rounds of
 diagnostics; and frozen transfer is the strictest possible test. A larger or more expert dataset, a
 tuned anti-collapse weight, or a linear probe head instead of full RL might all change the picture.
+
+### Long run: 1.5M decisions, Breakout, four variants
+
+Three times the previous budget, 3 seeds each, same protocol (evaluation ε = 0.01, 10 episodes per seed,
+episodes capped at 10k decisions). `configs/long/`, launched with `scripts/run_long_breakout.sh`.
+
+| Variant (1.5M) | Q-policy | One-step lookahead | at 500k (Q / lookahead) |
+|---|---|---|---|
+| Model-free Double DQN | +13.67 ± 2.10 | – | +8.10 / – |
+| **Live delta + motion (joint)** | **+17.30 ± 3.06** | **+38.77 ± 3.19** | +13.63 / +25.53 |
+| Offline delta + motion, fine-tuned | +11.57 ± 0.81 | +20.67 ± 2.32 | +7.97 / +9.33 |
+| Offline delta + motion, frozen | +1.73 ± 0.21 | +1.97 ± 0.25 | +1.33 / +2.27 |
+
+Per-seed lookahead for the live model: 43.2, 35.8, 37.3. Every seed beats every seed of every other
+variant.
+
+1. **The gap widens with budget.** Joint training with lookahead goes 25.5 → 38.8 while the model-free
+   baseline goes 8.1 → 13.7, so the ratio holds at ~2.8× and the absolute margin grows from +17 to +25
+   points. Planning adds +21.5 points over the same checkpoint's own Q-policy (17.3 → 38.8).
+2. **Offline pretraining keeps improving but does not catch up.** Fine-tuned it more than doubles
+   (9.3 → 20.7) yet stays ~18 points behind joint training and, on the Q-policy, slightly *below* the
+   model-free baseline (11.6 vs 13.7).
+3. **Frozen offline features never learn, at any budget.** Their in-training scores across the whole
+   1.5M run are 1.4, 0.9, 1.2, 1.2, 0.9, 1.1 — flat from start to finish, with 3× the data. This is the
+   clearest form of the result: representations trained purely by observation, then frozen, do not
+   support control here.
+
+The diagnostics track the returns exactly, and explain the ordering:
+
+| 1.5M checkpoint | Effective rank | ball_x R² | paddle R² | Reward AUC | Shuffled-action penalty |
+|---|---|---|---|---|---|
+| Model-free | 29 | 0.38 | −0.29 | 0.83 | 0% |
+| Live delta + motion | 299 | **0.84** | **0.67** | 0.92 | **53%** |
+| Offline dm, fine-tuned | 284 | 0.75 | 0.45 | 0.95 | 5% |
+| Offline dm, frozen | 152 | **0.05** | −0.06 | 0.67 | 12% |
+
+The frozen encoder cannot locate the ball (R² 0.05) or the paddle (−0.06), which is exactly why nothing
+built on it can play. And the fine-tuned offline model, despite a healthy rank and the *best* reward
+probe, has an almost action-blind dynamics model (5% shuffled-action penalty against 53% for the live
+one) — it predicts the future well without predicting *its own influence* on it, and that is the
+difference between +20.7 and +38.8.
 
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 

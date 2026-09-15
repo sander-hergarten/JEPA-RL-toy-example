@@ -1,0 +1,198 @@
+{
+  "checkpoint": "runs/breakout_long_live_delta_motion/seed0/checkpoint.pt",
+  "variant": "C_world_model+jepa_delta",
+  "trained_modules": [
+    "encoder",
+    "q_head",
+    "dynamics",
+    "reward_head",
+    "continuation_head"
+  ],
+  "heldout": {
+    "episodes": [
+      {
+        "reset_seed": 20000,
+        "raw_return": 8.0,
+        "decisions": 432,
+        "emulator_frames": 1756,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20001,
+        "raw_return": 12.0,
+        "decisions": 578,
+        "emulator_frames": 2337,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20002,
+        "raw_return": 13.0,
+        "decisions": 485,
+        "emulator_frames": 1958,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      },
+      {
+        "reset_seed": 20003,
+        "raw_return": 24.0,
+        "decisions": 808,
+        "emulator_frames": 3249,
+        "terminated": true,
+        "truncated": false,
+        "complete": true
+      }
+    ],
+    "roots": 2303,
+    "split": "episodes [0, 1] train / rest test",
+    "policy": "epsilon-greedy Q, epsilon=0.1",
+    "seed_base": 20000
+  },
+  "spectrum_online": {
+    "dims": 3136,
+    "samples": 2303,
+    "total_variance": 3107.8149165204495,
+    "participation_ratio": 87.05392958031463,
+    "effective_rank_entropy": 308.4536300099582,
+    "top1_variance_frac": 0.06982382096004748,
+    "top10_variance_frac": 0.2612187562065184,
+    "dims_for_90pct": 443,
+    "dims_for_99pct": 1128
+  },
+  "spectrum_target": {
+    "dims": 3136,
+    "samples": 2303,
+    "total_variance": 3104.7177329434826,
+    "participation_ratio": 87.33486431333394,
+    "effective_rank_entropy": 308.7548094157382,
+    "top1_variance_frac": 0.06958179663396208,
+    "top10_variance_frac": 0.26082296633306457,
+    "dims_for_90pct": 443,
+    "dims_for_99pct": 1128
+  },
+  "temporal_structure": {
+    "gap_1": {
+      "pairs": 2299,
+      "mean_cosine_distance": 0.7698603272438049
+    },
+    "gap_2": {
+      "pairs": 2295,
+      "mean_cosine_distance": 0.7146567106246948
+    },
+    "gap_5": {
+      "pairs": 2283,
+      "mean_cosine_distance": 0.9053390026092529
+    },
+    "gap_10": {
+      "pairs": 2263,
+      "mean_cosine_distance": 0.9756712913513184
+    },
+    "gap_20": {
+      "pairs": 2223,
+      "mean_cosine_distance": 0.9931979775428772
+    },
+    "gap_50": {
+      "pairs": 2103,
+      "mean_cosine_distance": 0.9521636962890625
+    },
+    "different_episode": {
+      "pairs": 2998,
+      "mean_cosine_distance": 1.0003557205200195
+    }
+  },
+  "state_decodability": {
+    "targets": "ALE RAM bytes",
+    "ridge_lambda": 1.0,
+    "probe_components": 101,
+    "varying_targets": 41,
+    "mean_r2_over_varying": -0.005440151623296837,
+    "median_r2_over_varying": 0.009152152946705239,
+    "targets_r2_above_0.5": 9,
+    "targets_r2_above_0.9": 0,
+    "best_targets": [
+      {
+        "index": 99,
+        "r2": 0.8622618858238016
+      },
+      {
+        "index": 24,
+        "r2": 0.7908293700109226
+      },
+      {
+        "index": 72,
+        "r2": 0.7324657917053818
+      },
+      {
+        "index": 70,
+        "r2": 0.7128750317923058
+      },
+      {
+        "index": 6,
+        "r2": 0.6592105472177768
+      },
+      {
+        "index": 82,
+        "r2": 0.6416509177449277
+      },
+      {
+        "index": 91,
+        "r2": 0.5536911262919076
+      },
+      {
+        "index": 101,
+        "r2": 0.5402696055403327
+      }
+    ],
+    "note": "evaluation-only probe; the emulator state is never an agent input",
+    "labelled_ram": {
+      "player_x": 0.7324657917053818,
+      "ball_x": 0.8622618858238016,
+      "ball_y": 0.5402696055403327,
+      "blocks_hit_count": 0.5041289189723428,
+      "score": -1.1433785604942015
+    },
+    "label_caveat": "Breakout player_x/ball_x/ball_y verified here by pixel correlation; other indices are published annotations"
+  },
+  "reward_event_probe": {
+    "horizon_decisions": 8,
+    "base_rate_test": 0.17324052590873937,
+    "test_r2": 0.4718854557188461,
+    "test_auc": 0.9005746358412402,
+    "note": "AUC 0.5 means the latent carries no linear information about imminent rewards"
+  },
+  "movement_probe": {
+    "split": "episodes [0, 1] train / [2, 3] test",
+    "train_samples": 1010,
+    "test_samples": 1293,
+    "test_class_counts": [
+      618,
+      237,
+      438
+    ],
+    "train_acc": 0.999009900990099,
+    "test_acc": 0.5986078886310905,
+    "test_balanced_acc": 0.6243261094397708,
+    "test_majority_baseline_acc": 0.4779582366589327,
+    "chance_balanced_acc": 0.3333333333333333,
+    "note": "classes: 0 none, 1 RIGHT*, 2 LEFT* (from action meanings); sticky actions add label noise"
+  },
+  "wall_time_s": 15.830742607999127,
+  "train_counters": {
+    "decisions": 1500000,
+    "updates": 373750,
+    "episodes": 2900,
+    "train_emulator_frames": 6055687,
+    "sampled_sequences": 11960000,
+    "sampled_valid_transitions": 59554178,
+    "sampled_latent_targets": 59432483,
+    "eval_decisions": 83519,
+    "eval_emulator_frames": 334753,
+    "warmup_until": 5000,
+    "resume_count": 0,
+    "wall_time_s": 7086.883632060984
+  }
+}

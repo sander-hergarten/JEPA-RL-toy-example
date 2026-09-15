@@ -14,6 +14,20 @@
 | breakout_ball_delta_motion | C_world_model+jepa_delta | q (eps=0.01) | s0: +9.9 ± 3.4 (10); s1: +10.0 ± 2.4 (10); s2: +10.7 ± 3.3 (10) | +10.20 ± 0.36 (n=3) | 0.000 | 0.92 |
 | breakout_ball_motion | C_world_model | lookahead (eps=0.01) | s0: +2.0 ± 0.9 (10); s1: +2.4 ± 1.5 (10); s2: +3.5 ± 1.4 (10) | +2.63 ± 0.63 (n=3) | 0.654 | 11.02 |
 | breakout_ball_motion | C_world_model | q (eps=0.01) | s0: +2.3 ± 0.6 (10); s1: +2.0 ± 0.4 (10); s2: +3.9 ± 1.8 (10) | +2.73 ± 0.83 (n=3) | 0.000 | 5.21 |
+| breakout_long_live_delta_motion | C_world_model+jepa_delta | lookahead | s0: +33.7 ± 13.3 (10); s1: +47.6 ± 10.3 (10); s2: +38.8 ± 16.1 (10) | +40.03 ± 5.74 (n=3) | 0.719 | 0.78 |
+| breakout_long_live_delta_motion | C_world_model+jepa_delta | lookahead (eps=0.01) | s0: +43.2 ± 13.9 (10); s1: +35.8 ± 11.4 (10); s2: +37.3 ± 13.8 (10) | +38.77 ± 3.19 (n=3) | 0.668 | 0.78 |
+| breakout_long_live_delta_motion | C_world_model+jepa_delta | q | s0: +11.1 ± 8.6 (10); s1: +18.4 ± 7.1 (10); s2: +13.7 ± 7.9 (10) | +14.40 ± 3.02 (n=3) | 0.000 | 0.24 |
+| breakout_long_live_delta_motion | C_world_model+jepa_delta | q (eps=0.01) | s0: +14.7 ± 3.6 (10); s1: +21.6 ± 5.6 (10); s2: +15.6 ± 3.8 (10) | +17.30 ± 3.06 (n=3) | 0.000 | 0.35 |
+| breakout_long_offline_dm_finetune | C_world_model+jepa_delta | lookahead | s0: +22.6 ± 8.1 (10); s1: +16.4 ± 4.3 (10); s2: +23.3 ± 9.5 (10) | +20.77 ± 3.10 (n=3) | 0.663 | 0.74 |
+| breakout_long_offline_dm_finetune | C_world_model+jepa_delta | lookahead (eps=0.01) | s0: +22.5 ± 7.8 (10); s1: +17.4 ± 4.1 (10); s2: +22.1 ± 9.7 (10) | +20.67 ± 2.32 (n=3) | 0.668 | 0.87 |
+| breakout_long_offline_dm_finetune | C_world_model+jepa_delta | q | s0: +6.7 ± 6.6 (10); s1: +9.8 ± 5.5 (10); s2: +10.5 ± 6.0 (10) | +9.00 ± 1.65 (n=3) | 0.000 | 0.24 |
+| breakout_long_offline_dm_finetune | C_world_model+jepa_delta | q (eps=0.01) | s0: +12.7 ± 6.1 (10); s1: +10.9 ± 3.0 (10); s2: +11.1 ± 6.3 (10) | +11.57 ± 0.81 (n=3) | 0.000 | 0.36 |
+| breakout_long_offline_dm_frozen | C_world_model+jepa_delta | lookahead | s0: +1.7 ± 0.9 (10); s1: +0.9 ± 1.0 (10); s2: +1.8 ± 1.1 (10) | +1.47 ± 0.40 (n=3) | 0.942 | 0.65 |
+| breakout_long_offline_dm_frozen | C_world_model+jepa_delta | lookahead (eps=0.01) | s0: +1.7 ± 0.6 (10); s1: +1.9 ± 0.9 (10); s2: +2.3 ± 1.1 (10) | +1.97 ± 0.25 (n=3) | 0.802 | 1.05 |
+| breakout_long_offline_dm_frozen | C_world_model+jepa_delta | q | s0: +1.0 ± 1.2 (10); s1: +1.7 ± 0.9 (10); s2: +1.5 ± 0.7 (10) | +1.40 ± 0.29 (n=3) | 0.000 | 0.24 |
+| breakout_long_offline_dm_frozen | C_world_model+jepa_delta | q (eps=0.01) | s0: +1.5 ± 0.9 (10); s1: +1.7 ± 1.1 (10); s2: +2.0 ± 1.3 (10) | +1.73 ± 0.21 (n=3) | 0.000 | 0.52 |
+| breakout_long_q | A_q_baseline | q | s0: +14.5 ± 5.8 (10); s1: +10.5 ± 3.3 (10); s2: +11.6 ± 4.8 (10) | +12.20 ± 1.69 (n=3) | 0.000 | 0.33 |
+| breakout_long_q | A_q_baseline | q (eps=0.01) | s0: +16.4 ± 4.5 (10); s1: +11.3 ± 4.1 (10); s2: +13.3 ± 4.1 (10) | +13.67 ± 2.10 (n=3) | 0.000 | 0.34 |
 | breakout_offline_delta_frozen_500k | C_world_model+jepa_delta | lookahead | s0: +0.5 ± 0.5 (10); s1: +0.5 ± 1.0 (10); s2: +1.1 ± 1.1 (10) | +0.70 ± 0.28 (n=3) | 0.583 | 0.60 |
 | breakout_offline_delta_frozen_500k | C_world_model+jepa_delta | lookahead (eps=0.01) | s0: +1.0 ± 0.4 (10); s1: +0.8 ± 1.1 (10); s2: +2.1 ± 0.3 (10) | +1.30 ± 0.57 (n=3) | 0.676 | 0.78 |
 | breakout_offline_delta_frozen_500k | C_world_model+jepa_delta | q | s0: +1.1 ± 1.1 (10); s1: +1.3 ± 1.4 (10); s2: +1.1 ± 1.1 (10) | +1.17 ± 0.09 (n=3) | 0.000 | 0.17 |
@@ -116,6 +130,18 @@
 | breakout_ball_motion/seed0 | 100000 | 23750 | 409730 | 3118 | 3544936 | 0.96 |
 | breakout_ball_motion/seed1 | 100000 | 23750 | 408975 | 3489 | 3544936 | 0.96 |
 | breakout_ball_motion/seed2 | 100000 | 23750 | 409135 | 5196 | 3544936 | 0.97 |
+| breakout_long_live_delta_motion/seed0 | 1500000 | 373750 | 6055687 | 83519 | 3544936 | 1.97 |
+| breakout_long_live_delta_motion/seed1 | 1500000 | 373750 | 6061208 | 91658 | 3544936 | 2.03 |
+| breakout_long_live_delta_motion/seed2 | 1500000 | 373750 | 6056796 | 83240 | 3544936 | 1.96 |
+| breakout_long_offline_dm_finetune/seed0 | 1500000 | 373750 | 6072307 | 38264 | 3544936 | 2.02 |
+| breakout_long_offline_dm_finetune/seed1 | 1500000 | 373750 | 6071511 | 36936 | 3544936 | 2.03 |
+| breakout_long_offline_dm_finetune/seed2 | 1500000 | 373750 | 6070886 | 47759 | 3544936 | 1.96 |
+| breakout_long_offline_dm_frozen/seed0 | 1500000 | 373750 | 6130053 | 114723 | 3454536 | 2.01 |
+| breakout_long_offline_dm_frozen/seed1 | 1500000 | 373750 | 6140046 | 104560 | 3454536 | 2.02 |
+| breakout_long_offline_dm_frozen/seed2 | 1500000 | 373750 | 6135007 | 94766 | 3454536 | 2.01 |
+| breakout_long_q/seed0 | 1500000 | 373750 | 6069488 | 65501 | 1692452 | 0.82 |
+| breakout_long_q/seed1 | 1500000 | 373750 | 6074842 | 93841 | 1692452 | 0.84 |
+| breakout_long_q/seed2 | 1500000 | 373750 | 6067460 | 75482 | 1692452 | 0.83 |
 | breakout_offline_delta_frozen_500k/seed0 | 500000 | 123750 | 2045657 | 353888 | 3454536 | 1.04 |
 | breakout_offline_delta_frozen_500k/seed1 | 500000 | 123750 | 2044296 | 300445 | 3454536 | 1.03 |
 | breakout_offline_delta_frozen_500k/seed2 | 500000 | 123750 | 2046399 | 327344 | 3454536 | 1.03 |
@@ -237,6 +263,18 @@ Centered = cosine distance after subtracting the mean held-out target latent. De
 | breakout_ball_motion/seed0 | 628 | 0.023 / 0.026 | 0.064 / 0.112 | 0.065 | 0.112 / 0.205 | 0.1704 | 0.011 | 0.784 | 0.001 (0.046) | 1.00 (n=5) | n/a (n=0) | 0.0017 / 0.0050 |
 | breakout_ball_motion/seed1 | 628 | 0.024 / 0.027 | 0.083 / 0.129 | 0.082 | 0.156 / 0.235 | 0.1862 | 0.407 | 0.790 | 0.003 (0.046) | 1.00 (n=5) | n/a (n=0) | 0.0038 / 0.0080 |
 | breakout_ball_motion/seed2 | 1118 | 0.013 / 0.017 | 0.041 / 0.101 | 0.041 | 0.090 / 0.173 | 0.4179 | 0.000 | 0.616 | 0.007 (0.067) | 0.71 (n=14) | n/a (n=0) | 0.0035 / 0.0076 |
+| breakout_long_live_delta_motion/seed0 | 2303 | 0.139 / 0.770 | 0.213 / 0.906 | 0.329 | 0.341 / 0.976 | 0.7823 | 0.000 | 0.151 | 0.015 (0.101) | 0.85 (n=48) | n/a (n=0) | 0.0175 / 0.0346 |
+| breakout_long_live_delta_motion/seed1 | 2237 | 0.135 / 0.781 | 0.203 / 0.888 | 0.295 | 0.317 / 0.995 | 0.7339 | 0.000 | 0.152 | 0.015 (0.098) | 0.84 (n=45) | n/a (n=0) | 0.0113 / 0.0273 |
+| breakout_long_live_delta_motion/seed2 | 2119 | 0.138 / 0.770 | 0.214 / 0.913 | 0.338 | 0.344 / 0.983 | 0.7504 | 0.000 | 0.145 | 0.016 (0.108) | 0.90 (n=48) | n/a (n=0) | 0.0144 / 0.0325 |
+| breakout_long_offline_dm_finetune/seed0 | 2194 | 0.158 / 0.778 | 0.230 / 0.954 | 0.237 | 0.361 / 1.000 | 0.7582 | 0.000 | 0.102 | 0.022 (0.096) | 0.86 (n=43) | n/a (n=0) | 0.0094 / 0.0283 |
+| breakout_long_offline_dm_finetune/seed1 | 1647 | 0.162 / 0.779 | 0.221 / 0.948 | 0.228 | 0.301 / 0.989 | 0.7947 | 0.000 | 0.089 | 0.001 (0.093) | 1.00 (n=31) | n/a (n=0) | 0.0059 / 0.0177 |
+| breakout_long_offline_dm_finetune/seed2 | 1551 | 0.139 / 0.730 | 0.200 / 0.951 | 0.215 | 0.304 / 1.007 | 0.6781 | 0.000 | 0.103 | 0.006 (0.088) | 0.96 (n=27) | n/a (n=0) | 0.0085 / 0.0248 |
+| breakout_long_offline_dm_frozen/seed0 | 688 | 0.195 / 0.918 | 0.321 / 0.866 | 0.352 | 0.425 / 0.893 | 0.0025 | 0.781 | 0.983 | 0.016 (0.043) | 0.60 (n=5) | n/a (n=0) | 0.0036 / 0.0029 |
+| breakout_long_offline_dm_frozen/seed1 | 644 | 0.247 / 0.990 | 0.412 / 0.918 | 0.448 | 0.547 / 0.935 | 0.0025 | 0.783 | 0.982 | 0.012 (0.038) | 0.75 (n=4) | n/a (n=0) | 0.0036 / 0.0027 |
+| breakout_long_offline_dm_frozen/seed2 | 640 | 0.258 / 0.978 | 0.416 / 0.918 | 0.493 | 0.549 / 0.938 | 0.0024 | 0.774 | 0.982 | 0.012 (0.038) | 0.75 (n=4) | n/a (n=0) | 0.0050 / 0.0046 |
+| breakout_long_q/seed0 | 2984 | 0.092 / 0.042 | 0.579 / 0.145 | 0.578 | 0.855 / 0.195 | 0.0760 | 0.528 | 0.575 | 1.285 (0.106) | 0.89 (n=66) | n/a (n=0) | 0.0058 / 0.3267 |
+| breakout_long_q/seed1 | 2221 | 0.104 / 0.059 | 0.618 / 0.200 | 0.618 | 0.896 / 0.265 | 0.0874 | 0.512 | 0.618 | 1.069 (0.099) | 0.04 (n=45) | n/a (n=0) | 0.0060 / 0.0784 |
+| breakout_long_q/seed2 | 1591 | 0.105 / 0.055 | 0.628 / 0.194 | 0.628 | 0.899 / 0.263 | 0.0259 | 0.637 | 0.491 | 1.154 (0.094) | 0.70 (n=30) | n/a (n=0) | 0.0114 / 0.1113 |
 | breakout_offline_delta_frozen_500k/seed0 | 869 | 0.687 / 0.692 | 0.742 / 0.766 | 0.743 | 0.770 / 0.797 | 0.0008 | 0.838 | 0.996 | 0.026 (0.041) | 1.00 (n=6) | n/a (n=0) | 0.0023 / 0.0048 |
 | breakout_offline_delta_frozen_500k/seed1 | 873 | 0.600 / 0.604 | 0.686 / 0.687 | 0.686 | 0.754 / 0.720 | 0.0009 | 0.858 | 0.996 | 0.037 (0.035) | 0.00 (n=5) | n/a (n=0) | 0.0030 / 0.0036 |
 | breakout_offline_delta_frozen_500k/seed2 | 722 | 0.747 / 0.753 | 0.789 / 0.817 | 0.789 | 0.808 / 0.842 | 0.0008 | 0.835 | 0.996 | 0.013 (0.034) | 0.75 (n=4) | n/a (n=0) | 0.0035 / 0.0050 |
