@@ -1,0 +1,29 @@
+.gitignore
+  s_49e1defdfc48d1::t_a432df96728d79 19-22
+README.md
+  s_49e1defdfc48d1::t_22ea7afb0ce60c 449,1038-1062,1149-1161
+scripts/run_sample_efficiency.sh
+  s_49e1defdfc48d1::t_f2fd0c478d8e6a 1-13
+scripts/run_wave10.sh
+  s_49e1defdfc48d1::t_80336982d34af6 1-19
+scripts/run_wave11.sh
+  s_49e1defdfc48d1::t_d526e99860b11e 1-23
+scripts/run_wave9.sh
+  s_49e1defdfc48d1::t_c26f1646491990 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5eb7f4c48484be1f750551d61c46db55d2863196",
+  "prompts": {},
+  "sessions": {
+    "s_49e1defdfc48d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_49e1defdfc48d1",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
