@@ -16,3 +16,7 @@ runs_sanity/
 
 # Offline datasets (large, regenerate with atari_jepa.collect)
 data/
+data_*.log
+
+# Rendered gameplay (large, regenerate with atari_jepa.record)
+videos/

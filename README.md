@@ -446,6 +446,7 @@ diagnostic failure in the previous one. In short:
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
 | 9 | Sample-efficiency matrix at a fixed 500k budget, then follow-ups | **n-step is worth ~3× the samples** (any n ≥ 3); the replay-ratio failure was the *buffer size*, and n-step + rr 0.5 + a 300k buffer gives **+47.9 at 500k**; planner-driven collection hurts even when switched in late |
 | 10 | 2.5M with n-step | **+70.9 with lookahead**, 3.8× model-free |
+| 11 | Planning depth sweep on the 2.5M n-step checkpoints | Depth pays up to the training rollout horizon: **+91.7 at H = 5**, then *down* to +85.3 at H = 10 |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -1034,6 +1035,31 @@ n = 3, 5 and 10 are indistinguishable for the planner (39–41) and n = 10 is th
 Per-seed lookahead 62.3 / 95.3 / 55.2 — 3.8× the model-free baseline, though the spread is now wide
 enough (±17) that the mean should be read loosely.
 
+#### How deep is the planning horizon worth searching?
+
+Evaluation-only sweep on the same 2.5M n-step checkpoints (3 seeds, ε = 0.01, beam width 16, identical
+parameters — only the search depth changes). Spreads are the population std over the three seeds:
+
+| Search depth | Return | Per-seed | Latency / decision | Disagreement with Q |
+|---|---|---|---|---|
+| Q-policy (no search) | +32.00 ± 1.67 | 34.3 / 30.4 / 31.3 | 0.88 ms | – |
+| H = 1 (one-step) | +70.93 ± 17.47 | 62.3 / 95.3 / 55.2 | 1.70 ms | 0.71 |
+| H = 3 | +83.93 ± 3.45 | 87.9 / 79.5 / 84.4 | 1.98 ms | 0.72 |
+| **H = 5** | **+91.73 ± 9.93** | 98.3 / 99.2 / 77.7 | 3.08 ms | 0.73 |
+| H = 10 | +85.30 ± 5.05 | 80.6 / 92.3 / 83.0 | 6.84 ms | 0.73 |
+
+**Depth pays, then plateaus and slightly reverses.** Most of the gain is in the first step (+32 → +71);
+going 1 → 5 adds another 21 points for 1.8× the latency; going 5 → 10 *loses* 6 points while doubling
+the latency again. That is the expected shape when a learned model is unrolled beyond its training
+horizon: the dynamics were trained on K = 5-step rollouts, so H = 5 is the deepest search that stays
+inside the regime the model was fit on, and H = 10 is pure extrapolation — compounding latent error
+starts to outweigh the extra foresight. `evaluate.py` prints a warning whenever `--horizon` exceeds K.
+
+Note the disagreement column: the planner overrides the greedy Q action on ~70% of decisions at every
+depth, so the extra depth is not changing *how often* it disagrees, only *how well* it chooses.
+`videos/n5_2p5m_h10_seed10001.mp4` shows H = 10 next to the same checkpoint's Q policy (+95 vs +28 on
+that reset seed, close to both arms' 10-episode means).
+
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
 Averages over seeds, from `results/pong_{q,temporal_jepa,world_model}_500k/seed*/embeddings.json`
@@ -1119,6 +1145,19 @@ after 1,184 decisions, while the delta+motion world model with lookahead scores 
 decisions. Both sit near their variants' 3-seed averages (+8.10 and +25.53), so the clip is
 representative rather than a lucky episode. Videos are not committed (a few MB each); re-render them
 with the command above.
+
+Deep search on the 2.5M n-step checkpoint (`--horizon` also applies to `record`):
+
+```bash
+python -m atari_jepa.record --out h10.mp4 --seed 10001 --epsilon 0.01 --horizon 10 \
+    --panel runs/breakout_long_n5/seed1/checkpoint.pt q         "2.5M n-step: Q policy (no planning)" \
+    --panel runs/breakout_long_n5/seed1/checkpoint.pt lookahead "2.5M n-step: 10-step lookahead (beam 16)"
+```
+
+Q **+28** in 982 decisions against **+95** in 1,684 decisions for the 10-step planner — both within a
+few points of their 10-episode means (+30.4 and +92.3 on that seed), so this clip is representative
+too. Reset seeds 10000/10002/10003 give (26, 62), (43, 66) and (80, 74): the last one is the reminder
+that single episodes swing widely and the table above is the result, not the video.
 
 ## Checkpoints and resume
 
