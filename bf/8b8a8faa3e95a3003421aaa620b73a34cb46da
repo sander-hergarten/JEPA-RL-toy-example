@@ -1,0 +1,39 @@
+.gitignore
+  s_2be3480cc00068::t_96c887935d19f8 19-22
+README.md
+  s_2be3480cc00068::t_05df041bc44cbe 449,1038-1062,1149-1161
+configs/sample_eff/breakout_se_hjepa_attached_500k.yaml
+  s_2be3480cc00068::t_ecbdef50e35632 1-62
+configs/sample_eff/breakout_se_hjepa_detached_500k.yaml
+  s_2be3480cc00068::t_987a1cbc978830 1-62
+scripts/run_sample_efficiency.sh
+  s_2be3480cc00068::t_6abdd39433ddbc 1-13
+scripts/run_wave10.sh
+  s_2be3480cc00068::t_6b7e5601f6845f 1-19
+scripts/run_wave11.sh
+  s_2be3480cc00068::t_dd4b8bae0991db 1-23
+scripts/run_wave9.sh
+  s_2be3480cc00068::t_43be77ef13f297 1-13
+src/atari_jepa/config.py
+  s_2be3480cc00068::t_d27e7c7ff7a04e 105-107
+src/atari_jepa/losses.py
+  s_2be3480cc00068::t_f0e3d765435612 366-367,371,382,384
+tests/test_hierarchical.py
+  s_2be3480cc00068::t_452d4a29fdc87f 85-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf8b8a8faa3e95a3003421aaa620b73a34cb46da",
+  "prompts": {},
+  "sessions": {
+    "s_2be3480cc00068": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2be3480cc00068",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
