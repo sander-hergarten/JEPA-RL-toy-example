@@ -68,6 +68,34 @@ def beam_search(model, z: torch.Tensor, horizon: int, beam_width: int, gamma: fl
     raise ValueError("horizon must be >= 1")
 
 
+@torch.no_grad()
+def hierarchical_scores(model, z: torch.Tensor, gamma: float, sequences: torch.Tensor) -> torch.Tensor:
+    """Score candidate action sequences with the level-2 jumpy model; ``[N]`` for a single root.
+
+    J(seq) = E[R_macro(z, seq)] + gamma^H * P(continue through the window) * max_b Q(g_H(z, seq))
+
+    One forward pass per candidate over the whole window, instead of H unrolls of the one-step model.
+    """
+    n = sequences.shape[0]
+    zr = z.expand(n, *z.shape[1:])
+    ret = model.macro_return(zr, sequences)
+    cont = torch.sigmoid(model.macro_continuation(zr, sequences))
+    value = model.q_head(model.macro_dynamics(zr, sequences)).max(dim=-1).values
+    return ret + gamma ** sequences.shape[1] * cont * value
+
+
+def candidate_sequences(num_actions: int, horizon: int, budget: int, generator: torch.Generator | None,
+                        device) -> torch.Tensor:
+    """All ``A**H`` sequences when that fits in the budget, else the constant ones plus random samples."""
+    total = num_actions**horizon
+    if total <= budget:
+        grid = torch.cartesian_prod(*[torch.arange(num_actions) for _ in range(horizon)])
+        return grid.reshape(total, horizon).to(device)
+    constant = torch.arange(num_actions).repeat_interleave(horizon).view(num_actions, horizon)
+    sampled = torch.randint(0, num_actions, (budget - num_actions, horizon), generator=generator)
+    return torch.cat([constant, sampled]).to(device)
+
+
 class Controller:
     name = "base"
 
@@ -136,7 +164,28 @@ class LookaheadController(Controller):
         return action, q_action
 
 
+class HierarchicalController(Controller):
+    """Plan with the level-2 jumpy model over action sequences, execute the first action, replan."""
+
+    name = "hierarchical"
+
+    def __init__(self, model, device, epsilon, seed, gamma, budget=128):
+        super().__init__(model, device, epsilon, seed)
+        self.gamma = gamma
+        gen = torch.Generator().manual_seed(seed)
+        self.sequences = candidate_sequences(model.num_actions, model.macro_horizon, budget, gen, device)
+
+    def _choose(self, z):
+        q_action = int(self.model.q_head(z).argmax(dim=-1))
+        scores = hierarchical_scores(self.model, z, self.gamma, self.sequences)
+        return int(self.sequences[int(torch.argmax(scores)), 0]), q_action
+
+
 def make_controller(name: str, model, cfg, device: torch.device, epsilon: float, seed: int, horizon: int | None = None):
+    if name == "hierarchical":
+        if getattr(model, "macro_dynamics", None) is None:
+            raise ValueError("controller 'hierarchical' needs a checkpoint trained with loss.hierarchical")
+        return HierarchicalController(model, device, epsilon, seed, cfg.loss.gamma, cfg.planning.macro_candidates)
     if name == "q":
         return QController(model, device, epsilon, seed)
     if name == "lookahead":
@@ -149,4 +198,4 @@ def make_controller(name: str, model, cfg, device: torch.device, epsilon: float,
             horizon=horizon or cfg.planning.horizon,
             beam_width=cfg.planning.beam_width,
         )
-    raise ValueError(f"unknown controller {name!r}; choose 'q' or 'lookahead'")
+    raise ValueError(f"unknown controller {name!r}; choose 'q', 'lookahead' or 'hierarchical'")

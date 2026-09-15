@@ -357,6 +357,39 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
         with torch.no_grad():
             metrics["inverse_acc"] = masked_mean((inv_logits.argmax(-1) == actions).float(), valid)
 
+    if cfg.hierarchical:
+        H = min(cfg.macro_horizon, K)
+        macro_actions = actions[:, :H]
+        # a macro step is valid only if all H one-step transitions inside it are
+        macro_valid = valid[:, :H].all(dim=1)
+        ended = terminated[:, :H].any(dim=1)
+        z_macro = model.macro_dynamics(z0, macro_actions)
+        # jumpy latent target: the real observation H steps ahead (no target when the episode ended)
+        macro_latent_mask = macro_valid & ~ended
+        if cfg.jepa:
+            m_dist = jepa_distances([z0, z_macro], target_z[:, H - 1 : H], target_z0, cfg.jepa_target, cfg.cosine_eps)
+        else:
+            with torch.no_grad():
+                t_macro = model.target_encoder(obs[:, H])
+            m_dist = cosine_distance(z_macro, t_macro, cfg.cosine_eps).unsqueeze(1)
+        l_macro_jepa = masked_mean(m_dist[:, 0], macro_latent_mask)
+        # macro return: discounted sum of the clipped rewards actually collected inside the window
+        with torch.no_grad():
+            disc = torch.tensor([cfg.gamma**i for i in range(H)], device=obs.device)
+            alive = torch.cumprod(torch.cat([torch.ones_like(terminated[:, :1]), ~terminated[:, :H - 1]], 1).float(), 1)
+            macro_ret = (rewards[:, :H] * disc * alive * valid[:, :H]).sum(1)
+        pred_ret = model.macro_return(z0, macro_actions)
+        l_macro_ret = masked_mean((pred_ret - macro_ret) ** 2, macro_valid)
+        cont_logit = model.macro_continuation(z0, macro_actions)
+        l_macro_cont = masked_mean(
+            F.binary_cross_entropy_with_logits(cont_logit, (~ended).float(), reduction="none"), macro_valid)
+        l_macro = l_macro_jepa + l_macro_ret + l_macro_cont
+        total = total + cfg.lambda_macro * l_macro
+        metrics["loss_macro"] = l_macro
+        metrics["macro_jepa"] = l_macro_jepa
+        metrics["macro_return_mse"] = l_macro_ret
+        metrics["macro_cont_bce"] = l_macro_cont
+
     z_root = z0.flatten(1)  # before any L2 normalization
     std = latent_std(z_root, cfg.variance_eps)
     if cfg.variance:

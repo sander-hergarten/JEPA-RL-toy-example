@@ -148,3 +148,50 @@ class InverseDynamicsHead(nn.Module):
 
     def forward(self, z: torch.Tensor, z_next: torch.Tensor) -> torch.Tensor:
         return self.net(torch.cat([z.flatten(1), z_next.flatten(1)], dim=1))
+
+
+class MacroDynamics(nn.Module):
+    """Jumpy ("hierarchical") dynamics: predict the latent H steps ahead in one shot.
+
+    Conditioned on the whole action sequence rather than a single action, so planning can score any
+    candidate sequence with one forward pass instead of unrolling the one-step model H times. This is
+    the temporal-abstraction level of an H-JEPA-style hierarchy: level 1 predicts single steps, level 2
+    skips over H of them.
+    """
+
+    def __init__(self, latent_shape: tuple[int, int, int], num_actions: int, horizon: int, cfg: NetworkConfig):
+        super().__init__()
+        channels = latent_shape[0]
+        self.num_actions, self.horizon = num_actions, horizon
+        self.compute_dtype = _DTYPES[cfg.conv_dtype]
+        self.seq_embed = nn.Linear(num_actions * horizon, cfg.action_embed_dim)
+        self.conv_in = nn.Conv2d(channels + cfg.action_embed_dim, channels, 3, padding=1)
+        self.blocks = nn.Sequential(*[ResidualBlock(channels) for _ in range(cfg.dynamics_blocks)])
+        self.conv_out = nn.Conv2d(channels, channels, 3, padding=1)
+        self.norm = nn.LayerNorm(latent_shape)
+
+    def embed(self, actions: torch.Tensor) -> torch.Tensor:
+        """``[B, H]`` actions -> ``[B, embed]``; the sequence is flattened one-hot."""
+        one_hot = F.one_hot(actions, self.num_actions).flatten(1).to(self.seq_embed.weight.dtype)
+        return self.seq_embed(one_hot)
+
+    def forward(self, z: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+        emb = self.embed(actions)[:, :, None, None].expand(-1, -1, *z.shape[2:])
+        with conv_autocast(z, self.compute_dtype):
+            h = F.relu(self.conv_in(torch.cat([z, emb], dim=1)))
+            delta = self.conv_out(self.blocks(h))
+        return self.norm(z + delta.float())
+
+
+class MacroHead(nn.Module):
+    """MLP on [flatten(z), one_hot sequence] -> a scalar (macro return, or a continuation logit)."""
+
+    def __init__(self, latent_dim: int, num_actions: int, horizon: int, hidden: int):
+        super().__init__()
+        self.num_actions, self.horizon = num_actions, horizon
+        self.net = nn.Sequential(nn.Linear(latent_dim + num_actions * horizon, hidden), nn.ReLU(),
+                                 nn.Linear(hidden, 1))
+
+    def forward(self, z: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+        one_hot = F.one_hot(actions, self.num_actions).flatten(1).to(z.dtype)
+        return self.net(torch.cat([z.flatten(1), one_hot], dim=1)).squeeze(-1)

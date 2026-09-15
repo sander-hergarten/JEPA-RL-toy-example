@@ -66,6 +66,7 @@ class NetworkConfig:
     # Append signed differences of consecutive frames in the stack as extra encoder input channels.
     # The ball is the only fast small mover, so differencing removes the static background from the input.
     motion_channels: bool = False
+    macro_hidden: int = 256
     # Compute dtype for the conv trunks (encoder and dynamics convs) via autocast. Parameters, optimizer
     # state, LayerNorm, MLP heads and all losses stay float32: latent cosine distances are ~1e-2, below
     # bfloat16's resolution near 1.0 (~4e-3), so loss math must not run in bfloat16.
@@ -95,6 +96,12 @@ class LossConfig:
     # dominates the cosine). "batch_centered": latents minus the batch-mean target latent.
     # "delta": the per-step change, so only what moves is predicted.
     jepa_target: str = "absolute"
+    # H-JEPA level 2: a jumpy dynamics that predicts `macro_horizon` steps ahead in one shot, with its
+    # own macro-return and macro-continuation heads. Enables planning over action sequences without
+    # unrolling the one-step model.
+    hierarchical: bool = False
+    macro_horizon: int = 5
+    lambda_macro: float = 1.0
     lambda_q: float = 1.0
     lambda_jepa: float = 1.0
     lambda_reward: float = 1.0
@@ -116,6 +123,8 @@ class LossConfig:
             raise ValueError(f"loss.inverse must be none, real or predicted, got {self.inverse!r}")
         if self.n_step < 1:
             raise ValueError(f"loss.n_step must be >= 1, got {self.n_step}")
+        if self.hierarchical and self.macro_horizon < 2:
+            raise ValueError(f"loss.macro_horizon must be >= 2, got {self.macro_horizon}")
         if self.jepa_target not in ("absolute", "batch_centered", "delta"):
             raise ValueError(
                 f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
@@ -231,6 +240,8 @@ class EvalConfig:
 class PlanningConfig:
     horizon: int = 1
     beam_width: int = 16
+    # Hierarchical planner: candidate action sequences scored with the level-2 jumpy model.
+    macro_candidates: int = 128
 
 
 @dataclass

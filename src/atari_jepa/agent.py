@@ -10,7 +10,8 @@ import torch
 from torch import nn
 
 from .config import Config
-from .networks import ContinuationHead, Dynamics, Encoder, InverseDynamicsHead, QHead, RewardHead
+from .networks import (ContinuationHead, Dynamics, Encoder, InverseDynamicsHead, MacroDynamics, MacroHead,
+                       QHead, RewardHead)
 
 
 class WorldModel(nn.Module):
@@ -36,6 +37,11 @@ class WorldModel(nn.Module):
         self.inverse_head = (
             InverseDynamicsHead(latent_dim, num_actions, net.inverse_hidden) if cfg.loss.inverse != "none" else None
         )
+        h = cfg.loss.macro_horizon
+        self.macro_horizon = h if cfg.loss.hierarchical else 0
+        self.macro_dynamics = MacroDynamics(self.latent_shape, num_actions, h, net) if cfg.loss.hierarchical else None
+        self.macro_return = MacroHead(latent_dim, num_actions, h, net.macro_hidden) if cfg.loss.hierarchical else None
+        self.macro_continuation = MacroHead(latent_dim, num_actions, h, net.macro_hidden) if cfg.loss.hierarchical else None
         self.target_encoder = copy.deepcopy(self.encoder)
         self.target_q_head = copy.deepcopy(self.q_head)
         for p in self.target_parameters():
@@ -46,7 +52,11 @@ class WorldModel(nn.Module):
     @property
     def online_modules(self) -> tuple[str, ...]:
         names = ("encoder", "dynamics", "q_head", "reward_head", "continuation_head")
-        return names + (("inverse_head",) if self.inverse_head is not None else ())
+        if self.inverse_head is not None:
+            names += ("inverse_head",)
+        if self.macro_dynamics is not None:
+            names += ("macro_dynamics", "macro_return", "macro_continuation")
+        return names
 
     def online_parameters(self) -> list[nn.Parameter]:
         return [p for name in self.online_modules for p in getattr(self, name).parameters()]
@@ -112,6 +122,8 @@ def trained_modules(cfg: Config) -> list[str]:
         mods.append("continuation_head")
     if cfg.loss.inverse != "none":
         mods.append("inverse_head")
+    if cfg.loss.hierarchical:
+        mods += ["macro_dynamics", "macro_return", "macro_continuation"]
     return mods
 
 

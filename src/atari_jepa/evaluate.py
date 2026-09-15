@@ -110,7 +110,7 @@ def run_evaluation(
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--controller", choices=["q", "lookahead", "both"], default="q")
+    p.add_argument("--controller", choices=["q", "lookahead", "hierarchical", "both"], default="q")
     p.add_argument("--episodes", type=int, default=None, help="default: eval.episodes from the checkpoint config")
     p.add_argument("--seed-base", type=int, default=None, help="reset seed of episode i is seed_base + i")
     p.add_argument("--epsilon", type=float, default=None)
