@@ -10,7 +10,8 @@ supports better decisions than the same network's Q-policy?
 | | Q-policy | One-step lookahead |
 |---|---|---|
 | Model-free Double DQN baseline | +18.87 ± 1.83 | – |
-| **World model + delta target + motion channels** | **+22.03 ± 2.57** | **+57.70 ± 5.20** |
+| World model + delta target + motion channels | +22.03 ± 2.57 | +57.70 ± 5.20 |
+| **… + 5-step Double DQN targets** | **+32.00 ± 1.67** | **+70.93 ± 17.47** |
 
 Planning with the learned model adds **+35.7 points** over the same checkpoint's own Q-policy and
 reaches ~3.1× the model-free baseline. The margin grows with budget rather than washing out:
@@ -443,7 +444,8 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
-| 9 | Sample-efficiency matrix at a fixed 500k budget | **n-step 5 is worth ~3× the samples** (+40.4 vs +28.3, matching the base recipe at 1.5M); doubling the replay ratio and planner-driven collection both *hurt* badly |
+| 9 | Sample-efficiency matrix at a fixed 500k budget, then follow-ups | **n-step is worth ~3× the samples** (any n ≥ 3); the replay-ratio failure was the *buffer size*, and n-step + rr 0.5 + a 300k buffer gives **+47.9 at 500k**; planner-driven collection hurts even when switched in late |
+| 10 | 2.5M with n-step | **+70.9 with lookahead**, 3.8× model-free |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -970,10 +972,9 @@ better value propagation gains 12 points of planning performance.
 
 **The other two hurt, and the reasons are instructive:**
 
-* **Doubling the replay ratio made it much worse** (−17 points) despite twice the gradient steps. With a
-  100k-frame buffer, two updates per decision means each transition is consumed twice as often; this is
-  the familiar replay-ratio/plasticity failure that data-efficient agents counter with periodic network
-  resets. More updates are not free here, and adding them without that machinery is actively harmful.
+* **Doubling the replay ratio made it much worse** (−17 points) despite twice the gradient steps —
+  but only in combination with 1-step targets and the small buffer. The follow-up below shows the
+  buffer was the real culprit: with n-step targets and a 300k-frame replay, the same ratio *helps*.
 * **Collecting with the planner was the worst single change** (−18 points). Early in training the model
   is poor, so planner actions are close to noise, and the behaviour policy then diverges from the
   Q-head's own greedy policy, making its targets more off-policy. The controller that is *better at
@@ -986,6 +987,52 @@ widest seed spread (±6.4), consistent with the two harmful factors partly cance
 
 Two of these three predictions (mine, before running) were wrong in sign, which is the argument for
 running the matrix rather than reasoning about it.
+
+#### Follow-ups: how large should n be, and why did the other two fail?
+
+**n-step sweep (500k).** The value barely matters, as long as it is not 1:
+
+| n | Q-policy | Lookahead |
+|---|---|---|
+| 1 (base) | +15.10 ± 1.77 | +28.33 ± 2.41 |
+| 3 | **+21.30 ± 1.53** | +39.03 ± 4.31 |
+| 5 | +19.10 ± 1.56 | +40.43 ± 2.19 |
+| 10 | +17.20 ± 3.51 | +40.63 ± 7.31 |
+
+n = 3, 5 and 10 are indistinguishable for the planner (39–41) and n = 10 is the noisiest (±7.3).
+
+**The two failures, retested on top of n-step 5:**
+
+| Arm | Q-policy | Lookahead | vs n5 |
+|---|---|---|---|
+| n5 (control) | +19.10 ± 1.56 | +40.43 ± 2.19 | ref |
+| + late planner switch at 250k | **+4.73 ± 1.10** | +35.43 ± 3.87 | −14.4 / −5.0 |
+| + replay ratio 0.5 | +22.03 ± 2.75 | +38.83 ± 1.84 | +2.9 / −1.6 |
+| + replay ratio 0.5 + Q-head resets | +20.83 ± 3.19 | +44.77 ± 5.56 | +1.7 / +4.3 |
+| + replay ratio 0.5 + **300k buffer** | **+25.17 ± 3.47** | **+47.87 ± 10.20** | +6.1 / +7.4 |
+
+* **The replay ratio was never the problem — the buffer was.** On the 1-step recipe, doubling the ratio
+  cost 17 points; on the n-step recipe it is neutral (−1.6), with Q-head resets it gains +4.3, and with a
+  3× larger buffer it gains **+7.4**, giving the best 500k result in this repository (+47.9 — more than
+  the original recipe reached at 1.5M). The earlier negative result was an interaction between stale
+  1-step targets and a buffer holding 20% of the run, not a property of replay ratio itself.
+* **Planner-driven collection fails even when the model is good.** Switching at 250k, with the model
+  already strong, the run tracks the control until the switch and then loses 14 points of *Q-policy*
+  performance (+19.1 → +4.7) while the *planner* stays reasonable (+35.4). That is the signature of a
+  behaviour/target mismatch rather than bad data quality: once the Q head's own greedy action is never
+  the action taken, its targets go badly off-policy and it degrades, even though the data still
+  supports the planner. Keep collecting with the policy you are training.
+
+**The long run with n-step (2.5M):**
+
+| Variant at 2.5M | Q-policy | Lookahead |
+|---|---|---|
+| Model-free baseline | +18.87 ± 1.83 | – |
+| delta + motion, 1-step | +22.03 ± 2.57 | +57.70 ± 5.20 |
+| **delta + motion + n-step 5** | **+32.00 ± 1.67** | **+70.93 ± 17.47** |
+
+Per-seed lookahead 62.3 / 95.3 / 55.2 — 3.8× the model-free baseline, though the spread is now wide
+enough (±17) that the mean should be read loosely.
 
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
