@@ -1,0 +1,27 @@
+configs/sample_eff/breakout_se_hjepa_attached_500k.yaml
+  s_2be3480cc00068::t_ecbdef50e35632 1-62
+configs/sample_eff/breakout_se_hjepa_detached_500k.yaml
+  s_2be3480cc00068::t_987a1cbc978830 1-62
+src/atari_jepa/config.py
+  s_2be3480cc00068::t_d27e7c7ff7a04e 105-107
+src/atari_jepa/losses.py
+  s_2be3480cc00068::t_f0e3d765435612 366-367,371,382,384
+tests/test_hierarchical.py
+  s_2be3480cc00068::t_452d4a29fdc87f 85-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b5e45d76308611cff927722e8f81a3d9032498da",
+  "prompts": {},
+  "sessions": {
+    "s_2be3480cc00068": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2be3480cc00068",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
