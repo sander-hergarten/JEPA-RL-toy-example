@@ -82,3 +82,22 @@ def test_hierarchical_controller_refuses_a_flat_checkpoint():
     model = WorldModel(cfg, num_actions=4)
     with pytest.raises(ValueError, match="loss.hierarchical"):
         make_controller("hierarchical", model, cfg, torch.device("cpu"), 0.0, seed=0)
+
+
+@pytest.mark.parametrize("detach", [True, False])
+def test_macro_detach_controls_whether_level_two_can_change_level_one(detach):
+    """With detach, the jumpy loss must not reach the encoder; without it, it must."""
+    cfg = hierarchical_cfg()
+    cfg.loss.macro_detach = detach
+    cfg.loss.jepa = cfg.loss.reward = cfg.loss.continuation = cfg.loss.q_imagined = cfg.loss.variance = False
+    cfg.loss.lambda_q = 0.0  # isolate the macro loss
+    torch.manual_seed(0)
+    model = WorldModel(cfg, num_actions=4)
+    loss, _ = compute_losses(model, random_batch(K=3), cfg.loss)
+    loss.backward()
+    enc_grad = sum(p.grad.abs().sum() for p in model.encoder.parameters() if p.grad is not None)
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.macro_dynamics.parameters())
+    if detach:
+        assert float(enc_grad) == 0.0
+    else:
+        assert float(enc_grad) > 0.0

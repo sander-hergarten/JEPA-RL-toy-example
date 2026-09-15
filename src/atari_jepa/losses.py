@@ -363,11 +363,12 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
         # a macro step is valid only if all H one-step transitions inside it are
         macro_valid = valid[:, :H].all(dim=1)
         ended = terminated[:, :H].any(dim=1)
-        z_macro = model.macro_dynamics(z0, macro_actions)
+        z_in = z0.detach() if cfg.macro_detach else z0  # level 2 must not corrupt level 1
+        z_macro = model.macro_dynamics(z_in, macro_actions)
         # jumpy latent target: the real observation H steps ahead (no target when the episode ended)
         macro_latent_mask = macro_valid & ~ended
         if cfg.jepa:
-            m_dist = jepa_distances([z0, z_macro], target_z[:, H - 1 : H], target_z0, cfg.jepa_target, cfg.cosine_eps)
+            m_dist = jepa_distances([z_in, z_macro], target_z[:, H - 1 : H], target_z0, cfg.jepa_target, cfg.cosine_eps)
         else:
             with torch.no_grad():
                 t_macro = model.target_encoder(obs[:, H])
@@ -378,9 +379,9 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
             disc = torch.tensor([cfg.gamma**i for i in range(H)], device=obs.device)
             alive = torch.cumprod(torch.cat([torch.ones_like(terminated[:, :1]), ~terminated[:, :H - 1]], 1).float(), 1)
             macro_ret = (rewards[:, :H] * disc * alive * valid[:, :H]).sum(1)
-        pred_ret = model.macro_return(z0, macro_actions)
+        pred_ret = model.macro_return(z_in, macro_actions)
         l_macro_ret = masked_mean((pred_ret - macro_ret) ** 2, macro_valid)
-        cont_logit = model.macro_continuation(z0, macro_actions)
+        cont_logit = model.macro_continuation(z_in, macro_actions)
         l_macro_cont = masked_mean(
             F.binary_cross_entropy_with_logits(cont_logit, (~ended).float(), reduction="none"), macro_valid)
         l_macro = l_macro_jepa + l_macro_ret + l_macro_cont

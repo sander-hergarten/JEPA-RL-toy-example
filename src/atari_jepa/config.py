@@ -102,6 +102,9 @@ class LossConfig:
     hierarchical: bool = False
     macro_horizon: int = 5
     lambda_macro: float = 1.0
+    # Train level 2 on detached level-1 latents. Without this, the jumpy objective pulls the shared
+    # encoder toward slowly-varying (action-insensitive) features and destroys level-1 planning.
+    macro_detach: bool = True
     lambda_q: float = 1.0
     lambda_jepa: float = 1.0
     lambda_reward: float = 1.0
