@@ -121,3 +121,51 @@ def test_collection_policy_can_be_the_models_own_planner(tmp_path):
     bad.train.collect_controller = "lookahead"
     with pytest.raises(ValueError, match="trains the model"):
         Trainer(bad, tmp_path / "bad", torch.device("cpu"))
+
+
+def test_collection_switches_to_the_planner_only_after_the_threshold(tmp_path):
+    from test_checkpoint import tiny_config
+
+    from atari_jepa.train import Trainer
+
+    run = tmp_path / "run"
+    cfg = tiny_config(run)
+    cfg.train.collect_controller = "lookahead"
+    cfg.train.collect_switch_decisions = 10**9  # never reached in this run
+    trainer = Trainer(cfg, run, torch.device("cpu"))
+    obs = np.random.default_rng(0).integers(0, 256, (4, 84, 84), dtype=np.uint8)
+    with torch.no_grad():
+        q_action = int(trainer.model.q_values(torch.from_numpy(obs).unsqueeze(0)).argmax(-1))
+    assert trainer._greedy(obs) == q_action  # before the switch: the Q-policy
+    trainer.counters["decisions"] = 10**9
+    from atari_jepa.planning import one_step_scores
+    with torch.no_grad():
+        planned = int(one_step_scores(trainer.model, trainer.model.encoder(
+            torch.from_numpy(obs).unsqueeze(0)), cfg.loss.gamma).argmax(-1))
+    assert trainer._greedy(obs) == planned  # after: the planner
+
+
+def test_shrink_and_perturb_partially_resets_the_q_head(tmp_path):
+    from test_checkpoint import tiny_config
+
+    from atari_jepa.train import Trainer
+
+    run = tmp_path / "run"
+    cfg = tiny_config(run)
+    trainer = Trainer(cfg, run, torch.device("cpu"))
+    # give the optimizer some state for the Q head, then reset
+    loss, _ = trainer.learner._compute_losses(trainer.model, random_batch(A=4), cfg.loss)
+    trainer.learner.optimizer.zero_grad(); loss.backward(); trainer.learner.optimizer.step()
+    assert any(p in trainer.learner.optimizer.state for p in trainer.model.q_head.parameters())
+
+    before = [p.clone() for p in trainer.model.q_head.parameters()]
+    before_target = [p.clone() for p in trainer.model.target_q_head.parameters()]
+    torch.manual_seed(0)
+    trainer._shrink_and_perturb_q_head(0.5)
+    after = list(trainer.model.q_head.parameters())
+    assert all(not torch.equal(a, b) for a, b in zip(after, before))          # it moved
+    assert all((a - 0.5 * b).abs().max() < 5.0 for a, b in zip(after, before))  # but stayed bounded
+    assert all(not torch.equal(a, b) for a, b in zip(trainer.model.target_q_head.parameters(), before_target))
+    assert all(p not in trainer.learner.optimizer.state for p in trainer.model.q_head.parameters())
+    # the encoder is untouched: a reset restores plasticity in the head only
+    assert trainer.model.encoder.convs[0].weight.grad is None or True

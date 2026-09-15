@@ -26,6 +26,7 @@ import torch
 import yaml
 
 from .agent import Learner, WorldModel, check_precision_supported, trained_modules
+from .networks import QHead
 from .checkpoint import check_compatible, load_checkpoint, restore_rng, rng_state, save_checkpoint
 from .config import Config, _set_nested, config_from_dict, load_config, save_config
 from .envs import FrameStacker, clip_reward, make_env
@@ -198,6 +199,8 @@ class Trainer:
                 "trained_modules": used,
                 "trained_parameters": sum(counts[m] for m in used),
                 "collect_controller": self.cfg.train.collect_controller,
+                "collect_switch_decisions": self.cfg.train.collect_switch_decisions,
+                "reset_heads_every_updates": self.cfg.train.reset_heads_every_updates,
                 "n_step": self.cfg.loss.n_step,
                 "update_every": self.cfg.train.update_every,
                 "init_from": self.cfg.train.init_from,
@@ -213,10 +216,26 @@ class Trainer:
     def _greedy(self, history: np.ndarray) -> int:
         """The exploitation action of the configured collection policy (epsilon is applied outside)."""
         obs = torch.from_numpy(history).to(self.device).unsqueeze(0)
-        if self._collector is None:
+        if self._collector is None or self.counters["decisions"] < self.cfg.train.collect_switch_decisions:
             return int(self.model.q_values(obs).argmax(dim=-1))
         z = self.model.encoder(obs)  # model-based collection: this run's own planner, never another's
         return int(one_step_scores(self.model, z, self.cfg.loss.gamma).argmax(dim=-1))
+
+    @torch.no_grad()
+    def _shrink_and_perturb_q_head(self, alpha: float) -> None:
+        """theta <- alpha*theta + (1-alpha)*fresh, for the online and target Q heads.
+
+        A partial reset restores plasticity without discarding everything learned; the optimizer moments
+        for those parameters are dropped so Adam does not carry stale statistics across the reset.
+        """
+        fresh = QHead(int(np.prod(self.model.latent_shape)), self.model.num_actions,
+                      self.cfg.network.q_hidden).to(self.device)
+        for head in (self.model.q_head, self.model.target_q_head):
+            for p, q in zip(head.parameters(), fresh.parameters()):
+                p.mul_(alpha).add_(q, alpha=1.0 - alpha)
+        for p in self.model.q_head.parameters():
+            self.learner.optimizer.state.pop(p, None)
+        self._log(f"shrink-and-perturb of the Q head (alpha={alpha})")
 
     def _evaluate(self) -> None:
         t = self.cfg.train
@@ -242,6 +261,9 @@ class Trainer:
         metrics = self.learner.update(batch.to_torch(self.device))
         c = self.counters
         c["updates"] += 1
+        every = cfg.train.reset_heads_every_updates
+        if every and c["updates"] % every == 0:
+            self._shrink_and_perturb_q_head(cfg.train.reset_shrink)
         c["sampled_sequences"] += cfg.optim.batch_size
         c["sampled_valid_transitions"] += int(metrics["valid_transitions"])
         c["sampled_latent_targets"] += int(metrics["latent_targets"])

@@ -179,6 +179,14 @@ class TrainConfig:
     # Policy used to *collect* training data: the greedy Q head, or the model-based lookahead
     # controller (each run always collects with its own network).
     collect_controller: str = "q"
+    # Decisions to keep collecting with the Q-policy before switching to collect_controller. Collecting
+    # with an untrained planner is worse than not planning at all, so the switch can be delayed until
+    # the model is good.
+    collect_switch_decisions: int = 0
+    # Shrink-and-perturb the Q head (online and target) every N updates: theta <- a*theta + (1-a)*random.
+    # Counteracts the plasticity loss that shows up at higher replay ratios. 0 disables it.
+    reset_heads_every_updates: int = 0
+    reset_shrink: float = 0.5
 
 
 @dataclass
