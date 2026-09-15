@@ -95,6 +95,27 @@ def test_resume_trims_logs_written_after_the_checkpoint(tmp_path):
     assert records and all(r["decisions"] <= 240 for r in records)
 
 
+def test_auto_resume_extends_to_the_configs_budget(tmp_path):
+    """Raising total_decisions in the config and re-running must continue, not report 'complete'."""
+    from atari_jepa.config import save_config
+    from atari_jepa.train import main as train_main
+
+    run = tmp_path / "run"
+    cfg = tiny_config(run, total=240)
+    cfg_path = tmp_path / "cfg.yaml"
+    save_config(cfg, cfg_path)
+    train_main(["--config", str(cfg_path), "--run-dir", str(run)])
+    assert load_checkpoint(run / "checkpoint.pt")["counters"]["decisions"] == 240
+
+    longer = tiny_config(run, total=360)
+    save_config(longer, cfg_path)
+    train_main(["--config", str(cfg_path), "--run-dir", str(run), "--auto-resume"])
+    assert load_checkpoint(run / "checkpoint.pt")["counters"]["decisions"] == 360
+
+    train_main(["--config", str(cfg_path), "--run-dir", str(run), "--auto-resume"])  # now a no-op
+    assert load_checkpoint(run / "checkpoint.pt")["counters"]["decisions"] == 360
+
+
 def test_resume_without_replay_reenters_warmup(tmp_path):
     run = tmp_path / "run"
     Trainer(tiny_config(run), run, torch.device("cpu")).run(["test"])

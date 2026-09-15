@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The 1.5M-decision Breakout comparison: model-free, live delta+motion, and offline delta+motion
+# The long Breakout comparison (budget comes from each config, so raising total_decisions and
+# re-running extends the runs): model-free, live delta+motion, and offline delta+motion
 # (fine-tuned and frozen), 3 seeds each. Idempotent: finished runs are skipped and unfinished ones
 # resume from their last checkpoint, so this can be re-run after a crash or reboot.
 set -uo pipefail
@@ -11,4 +12,4 @@ for s in ${SEEDS:-0 1 2}; do
   done
 done
 wait
-echo WAVE6_COMPLETE
+echo "${MARKER:-LONG_RUN_COMPLETE}"

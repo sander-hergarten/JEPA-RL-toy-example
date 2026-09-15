@@ -1,4 +1,5 @@
-# 1.5M decisions: world model trained jointly with RL, delta target + motion channels.
+# 2.5M decisions (extended from 1.5M by raising this budget and re-running with
+# --auto-resume; the 1.5M evaluations are archived as *_1500k.json in each run directory): world model trained jointly with RL, delta target + motion channels.
 name: breakout_long_live_delta_motion
 seed: 0
 device: auto
@@ -38,7 +39,7 @@ optim:
   grad_clip_norm: 10.0
   tau: 0.99
 train:
-  total_decisions: 1500000
+  total_decisions: 2500000
   warmup_decisions: 5000
   update_every: 4
   eps_start: 1.0

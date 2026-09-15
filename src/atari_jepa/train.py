@@ -382,6 +382,12 @@ def main(argv: list[str] | None = None) -> None:
                 return
             args.resume = str(cfg.resolved_run_dir())
             args.set = [s for s in args.set if s.startswith(("train.total_decisions", "torch_threads", "device"))]
+            # The config file's budget wins over the checkpoint's, so raising total_decisions there and
+            # re-running extends an existing run instead of finishing immediately.
+            if not any(s.startswith("train.total_decisions") for s in args.set):
+                args.set.append(f"train.total_decisions={cfg.train.total_decisions}")
+            print(f"auto-resume: {done} of {cfg.train.total_decisions} decisions done in "
+                  f"{cfg.resolved_run_dir()}")
 
     resume = None
     if args.resume:
