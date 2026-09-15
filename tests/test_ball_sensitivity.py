@@ -1,7 +1,9 @@
 """Motion input channels and the temporal-target variants (both aimed at small fast objects)."""
 
 import copy
+import json
 
+import numpy as np
 import pytest
 import torch
 from conftest import random_batch, world_model_config
@@ -91,3 +93,31 @@ def test_targets_train_through_the_rollout(mode):
         assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in getattr(model, name).parameters()), name
     assert all(p.grad is None for p in model.target_parameters())
     assert cfg.loss.variant_name().endswith(f"+jepa_{mode}")
+
+
+def test_collection_policy_can_be_the_models_own_planner(tmp_path):
+    """Planner-driven collection must use this run's own network, and disagree with greedy Q."""
+    from test_checkpoint import tiny_config
+
+    from atari_jepa.train import Trainer
+
+    run = tmp_path / "run"
+    cfg = tiny_config(run)
+    cfg.train.collect_controller = "lookahead"
+    trainer = Trainer(cfg, run, torch.device("cpu"))
+    assert trainer._collector == "lookahead"
+    obs = np.random.default_rng(0).integers(0, 256, (4, 84, 84), dtype=np.uint8)
+    planned = trainer._greedy(obs)
+    with torch.no_grad():
+        q_action = int(trainer.model.q_values(torch.from_numpy(obs).unsqueeze(0)).argmax(-1))
+    assert 0 <= planned < trainer.env.num_actions
+    trainer.run(["test"])  # a full short run collects with the planner without error
+    assert trainer.counters["decisions"] == cfg.train.total_decisions
+    assert json.loads((run / "metadata.json").read_text())["collect_controller"] == "lookahead"
+
+    # a config whose model is not trained must refuse planner collection rather than plan with noise
+    bad = tiny_config(tmp_path / "bad")
+    bad.loss.reward = False
+    bad.train.collect_controller = "lookahead"
+    with pytest.raises(ValueError, match="trains the model"):
+        Trainer(bad, tmp_path / "bad", torch.device("cpu"))

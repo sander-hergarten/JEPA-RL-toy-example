@@ -2,6 +2,8 @@
 
 import copy
 
+import numpy as np
+
 import pytest
 import torch
 
@@ -70,3 +72,43 @@ def test_target_q_consumes_target_encoder(model):
         a = model.target_q_head(model.target_encoder(obs))
         b = m2.target_q_head(m2.target_encoder(obs))
     torch.testing.assert_close(a, b)
+
+
+def test_n_step_targets_match_hand_computation_and_reduce_to_one_step():
+    from atari_jepa.losses import n_step_targets, td_targets
+
+    g = 0.5
+    rewards = torch.tensor([[1.0, 1.0, 1.0, 1.0], [1.0, -1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]])
+    terminated = torch.tensor([[0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]]).bool()
+    valid = torch.tensor([[1, 1, 1, 1], [1, 1, 0, 0], [1, 1, 0, 0]]).bool()  # row 2: window ends early
+    values = torch.tensor([[10.0, 20.0, 30.0, 40.0]] * 3)
+
+    one = n_step_targets(rewards, terminated, valid, values, g, 1, 2)
+    torch.testing.assert_close(one, td_targets(rewards[:, :2], terminated[:, :2], values[:, :2], g))
+
+    three = n_step_targets(rewards, terminated, valid, values, g, 3, 1)[:, 0]
+    # row 0: r + g r + g^2 r + g^3 V(x_3) = 1 + .5 + .25 + .125*30
+    # row 1: terminates at step 1 -> 1 + .5*(-1), no bootstrap
+    # row 2: step 2 is padding -> bootstrap at the last real step: 1 + .5*1 + .25*V(x_2)
+    torch.testing.assert_close(three, torch.tensor([1 + 0.5 + 0.25 + 0.125 * 30, 1 - 0.5, 1 + 0.5 + 0.25 * 20]))
+
+    # n larger than the window is clipped to the available steps, never reading past it
+    assert torch.equal(n_step_targets(rewards, terminated, valid, values, g, 99, 1),
+                       n_step_targets(rewards, terminated, valid, values, g, 4, 1))
+
+
+def test_n_step_flows_through_compute_losses():
+    from conftest import random_batch, world_model_config
+
+    from atari_jepa.agent import WorldModel
+    from atari_jepa.losses import compute_losses
+
+    cfg = world_model_config()
+    torch.manual_seed(0)
+    model = WorldModel(cfg, num_actions=4)
+    batch = random_batch()
+    _, m1 = compute_losses(model, batch, cfg.loss)
+    cfg.loss.n_step = 3
+    _, m3 = compute_losses(model, batch, cfg.loss)
+    assert m1["q_target_mean"] != m3["q_target_mean"]  # the target actually changed
+    assert np.isfinite(m3["loss_q"]) and m3["loss_q"] > 0

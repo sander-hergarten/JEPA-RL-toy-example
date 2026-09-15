@@ -30,6 +30,7 @@ from .checkpoint import check_compatible, load_checkpoint, restore_rng, rng_stat
 from .config import Config, _set_nested, config_from_dict, load_config, save_config
 from .envs import FrameStacker, clip_reward, make_env
 from .evaluate import run_evaluation
+from .planning import one_step_scores
 from .replay import SequenceReplay
 from .utils import JsonlWriter, configure_threads, runtime_versions, seed_everything, select_device, write_json
 
@@ -56,6 +57,11 @@ class Trainer:
         check_precision_supported(cfg, device)
         self.env = make_env(cfg.env)
         self.env_meta = self.env.metadata()
+        if cfg.train.collect_controller not in ("q", "lookahead"):
+            raise ValueError(f"train.collect_controller must be q or lookahead, got {cfg.train.collect_controller!r}")
+        if cfg.train.collect_controller == "lookahead" and not cfg.loss.trains_model:
+            raise ValueError("train.collect_controller=lookahead needs a config that trains the model")
+        self._collector = cfg.train.collect_controller if cfg.train.collect_controller != "q" else None
         self.model = WorldModel(cfg, self.env.num_actions).to(device)
         if cfg.train.init_from and resume is None:
             self._init_from_pretrained(cfg.train.init_from)
@@ -191,6 +197,9 @@ class Trainer:
                 "parameter_counts": counts,
                 "trained_modules": used,
                 "trained_parameters": sum(counts[m] for m in used),
+                "collect_controller": self.cfg.train.collect_controller,
+                "n_step": self.cfg.loss.n_step,
+                "update_every": self.cfg.train.update_every,
                 "init_from": self.cfg.train.init_from,
                 "freeze_encoder": self.cfg.train.freeze_encoder,
                 "optimizer_parameters": sum(p.numel() for p in self.model.trainable_parameters()),
@@ -202,8 +211,12 @@ class Trainer:
 
     @torch.no_grad()
     def _greedy(self, history: np.ndarray) -> int:
+        """The exploitation action of the configured collection policy (epsilon is applied outside)."""
         obs = torch.from_numpy(history).to(self.device).unsqueeze(0)
-        return int(self.model.q_values(obs).argmax(dim=-1))
+        if self._collector is None:
+            return int(self.model.q_values(obs).argmax(dim=-1))
+        z = self.model.encoder(obs)  # model-based collection: this run's own planner, never another's
+        return int(one_step_scores(self.model, z, self.cfg.loss.gamma).argmax(dim=-1))
 
     def _evaluate(self) -> None:
         t = self.cfg.train
@@ -273,7 +286,8 @@ class Trainer:
             )
         self._log(
             f"variant {cfg.loss.variant_name()} on {self.device}; env {cfg.env.id} "
-            f"(sticky={cfg.env.sticky_action_prob}); actions {self.env.action_meanings}; "
+            f"(sticky={cfg.env.sticky_action_prob}); collection policy {cfg.train.collect_controller}; "
+            f"actions {self.env.action_meanings}; "
             f"budget {t.total_decisions} decisions, warmup until {c['warmup_until']}"
         )
         self._t0 = time.perf_counter()

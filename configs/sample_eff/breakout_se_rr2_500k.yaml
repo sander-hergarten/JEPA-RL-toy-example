@@ -1,0 +1,57 @@
+# Sample-efficiency matrix (+ replay ratio 0.5 (one update per 2 decisions instead of 4)).
+# All arms are Breakout, 500k decisions, world model + delta target + motion channels, and each
+# arm trains from scratch and collects its own data: no arm ever sees another's samples.
+name: breakout_se_rr2_500k
+seed: 0
+device: auto
+network:
+  motion_channels: true
+env:
+  id: ALE/Breakout-v5
+  sticky_action_prob: 0.25      # primary experiment: explicit
+  frame_skip: 1
+  action_repeat: 4
+  screen_size: 84
+  history: 4
+  noop_max: 30
+  fire_on_reset: true           # Breakout needs FIRE to launch the ball
+  fire_on_life_loss: true       # and a new serve after each lost life; see README
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+  jepa_target: delta
+  lambda_q: 1.0
+  lambda_jepa: 1.0
+  lambda_reward: 1.0
+  lambda_continue: 1.0
+  lambda_var: 1.0
+  gamma: 0.99
+  variance_floor: 0.1
+replay:
+  capacity: 100000
+  rollout_steps: 5
+  save_with_checkpoint: true
+optim:
+  batch_size: 32
+  lr: 1.0e-4
+  grad_clip_norm: 10.0
+  tau: 0.99
+train:
+  total_decisions: 500000
+  warmup_decisions: 5000
+  update_every: 2
+  eps_start: 1.0
+  eps_end: 0.1
+  eps_decay_decisions: 50000
+  checkpoint_every_decisions: 100000
+  eval_every_decisions: 100000
+  eval_episodes: 3
+  eval_max_episode_decisions: 10000
+  eval_controllers: [q, lookahead]
+eval:
+  episodes: 10
+  seed_base: 10000
+  epsilon: 0.0

@@ -103,6 +103,9 @@ class LossConfig:
     lambda_cov: float = 0.0
     lambda_inverse: float = 1.0
     gamma: float = 0.99
+    # Steps accumulated in the Q target before bootstrapping. 1 = the specified single-step Double DQN;
+    # larger n propagates reward faster (capped by the rollout window K at each depth).
+    n_step: int = 1
     huber_delta: float = 1.0
     variance_floor: float = 0.1
     variance_eps: float = 1.0e-4
@@ -111,6 +114,8 @@ class LossConfig:
     def __post_init__(self) -> None:
         if self.inverse not in ("none", "real", "predicted"):
             raise ValueError(f"loss.inverse must be none, real or predicted, got {self.inverse!r}")
+        if self.n_step < 1:
+            raise ValueError(f"loss.n_step must be >= 1, got {self.n_step}")
         if self.jepa_target not in ("absolute", "batch_centered", "delta"):
             raise ValueError(
                 f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
@@ -171,6 +176,9 @@ class TrainConfig:
     # the encoder fixed so RL only learns on top of representations trained by observation.
     init_from: str | None = None
     freeze_encoder: bool = False
+    # Policy used to *collect* training data: the greedy Q head, or the model-based lookahead
+    # controller (each run always collects with its own network).
+    collect_controller: str = "q"
 
 
 @dataclass

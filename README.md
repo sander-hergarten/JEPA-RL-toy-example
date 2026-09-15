@@ -443,6 +443,7 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
+| 9 | Sample-efficiency matrix at a fixed 500k budget | **n-step 5 is worth ~3× the samples** (+40.4 vs +28.3, matching the base recipe at 1.5M); doubling the replay ratio and planner-driven collection both *hurt* badly |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -946,6 +947,45 @@ built on it can play. And the fine-tuned offline model, despite a healthy rank a
 probe, has an almost action-blind dynamics model (5% shuffled-action penalty against 53% for the live
 one) — it predicts the future well without predicting *its own influence* on it, and that is the
 difference between +20.7 and +38.8.
+
+### Sample efficiency: which lever actually pays (500k budget, Breakout)
+
+2.5M decisions is ~10M frames, far off the efficient frontier, so four candidate fixes were compared at
+a **fixed 500k-decision budget** on top of the delta+motion world model (`configs/sample_eff/`, 3 seeds
+each). Every arm trains from scratch and collects its own data; no arm ever sees another's samples.
+
+| Arm | Q-policy | Lookahead | vs base | Optimizer updates | Wall time |
+|---|---|---|---|---|---|
+| base (the current recipe) | +15.10 ± 1.77 | +28.33 ± 2.41 | ref | 123,750 | 1.07 h |
+| **+ n-step 5** | **+19.10 ± 1.56** | **+40.43 ± 2.19** | **+4.0 / +12.1** | 123,750 | 1.15 h |
+| + replay ratio 0.5 (update every 2) | +7.40 ± 0.51 | +11.23 ± 1.25 | −7.7 / −17.1 | 247,500 | 1.59 h |
+| + planner-driven collection | +2.87 ± 0.46 | +10.30 ± 1.24 | −12.2 / −18.0 | 123,750 | 1.18 h |
+| + all three | +7.47 ± 0.78 | +31.30 ± 6.41 | −7.6 / +3.0 | 247,500 | 1.74 h |
+
+**n-step returns are worth roughly 3× the samples.** Five-step targets reach **+40.4 at 500k**, which is
+what the base recipe needed **1.5M** decisions to reach (+38.8), and they win on every seed for both
+controllers. The change is a few lines, because the replay already returns masked K-step sequences. This
+matches the diagnosis that value learning, not the model, was the bottleneck: the same world model with
+better value propagation gains 12 points of planning performance.
+
+**The other two hurt, and the reasons are instructive:**
+
+* **Doubling the replay ratio made it much worse** (−17 points) despite twice the gradient steps. With a
+  100k-frame buffer, two updates per decision means each transition is consumed twice as often; this is
+  the familiar replay-ratio/plasticity failure that data-efficient agents counter with periodic network
+  resets. More updates are not free here, and adding them without that machinery is actively harmful.
+* **Collecting with the planner was the worst single change** (−18 points). Early in training the model
+  is poor, so planner actions are close to noise, and the behaviour policy then diverges from the
+  Q-head's own greedy policy, making its targets more off-policy. The controller that is *better at
+  evaluation time* (+57.7 vs +22.0 at 2.5M) is not automatically a better *data* policy while it is
+  still being learned. A late switch, once the model is good, is the experiment this suggests — not the
+  from-scratch version tested here.
+
+Combining all three recovers most of the lookahead loss (+31.3) but stays below n-step alone and has the
+widest seed spread (±6.4), consistent with the two harmful factors partly cancelling the helpful one.
+
+Two of these three predictions (mine, before running) were wrong in sign, which is the argument for
+running the matrix rather than reasoning about it.
 
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 

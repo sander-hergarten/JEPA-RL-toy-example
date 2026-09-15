@@ -207,6 +207,31 @@ def jepa_distances(z_hat: list[torch.Tensor], target_z: torch.Tensor, target_z0:
     raise ValueError(f"unknown jepa_target {mode!r}")
 
 
+def n_step_targets(rewards: torch.Tensor, terminated: torch.Tensor, valid: torch.Tensor,
+                   next_value: torch.Tensor, gamma: float, n: int, depths: int) -> torch.Tensor:
+    """Truncated n-step Double DQN targets for each depth ``k < depths``; ``[B, depths]``.
+
+    From root ``k`` the target accumulates up to ``min(n, K - k)`` real rewards and then bootstraps from
+    the value of the last *real* observation reached. A termination ends the sum with no bootstrap; a
+    padded (invalid) step means the window ended earlier, so the bootstrap stays at the last real step.
+    ``n = 1`` reproduces the single-step target exactly.
+    """
+    B, K = rewards.shape
+    zero = torch.zeros(B, device=rewards.device, dtype=rewards.dtype)
+    out = []
+    for k in range(depths):
+        acc, disc, boot = zero.clone(), torch.ones_like(zero), zero.clone()
+        alive = valid[:, k].bool()
+        for j in range(k, min(k + n, K)):
+            step = valid[:, j].bool() & alive
+            acc = acc + torch.where(step, disc * rewards[:, j], zero)
+            boot = torch.where(step, disc * gamma * (~terminated[:, j].bool()).to(rewards.dtype) * next_value[:, j], boot)
+            alive = step & ~terminated[:, j].bool()
+            disc = disc * gamma
+        out.append(acc + boot)
+    return torch.stack(out, dim=1)
+
+
 def unroll(dynamics: torch.nn.Module, z0: torch.Tensor, actions: torch.Tensor, steps: int) -> list[torch.Tensor]:
     """z_hat[0] = z0, z_hat[k+1] = g(z_hat[k], a_k). Predictions are never detached or replaced."""
     z_hat = [z0]
@@ -255,7 +280,15 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
         online_next_q = model.q_head(online_next_z[:, :q_depths].detach().flatten(0, 1)).unflatten(0, (B, q_depths))
         target_next_q = model.target_q_head(target_z[:, :q_depths].flatten(0, 1)).unflatten(0, (B, q_depths))
         next_value = double_dqn_value(online_next_q, target_next_q)
-        y = td_targets(rewards[:, :q_depths], terminated[:, :q_depths], next_value, cfg.gamma)
+        if cfg.n_step == 1:
+            y = td_targets(rewards[:, :q_depths], terminated[:, :q_depths], next_value, cfg.gamma)
+        else:
+            # n-step needs values at later observations too, so recompute over the full window
+            all_online_q = model.q_head(model.encoder(obs[:, 1:].flatten(0, 1))).unflatten(0, (B, K))
+            all_target_q = model.target_q_head(
+                model.target_encoder(obs[:, 1:].flatten(0, 1))).unflatten(0, (B, K))
+            values = double_dqn_value(all_online_q, all_target_q)
+            y = n_step_targets(rewards, terminated, valid, values, cfg.gamma, cfg.n_step, q_depths)
 
     # ---- online root encoding and recursive rollout
     z0 = model.encoder(obs[:, 0])
