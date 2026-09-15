@@ -9,187 +9,187 @@
     "episodes": [
       {
         "reset_seed": 20000,
-        "raw_return": 25.0,
-        "decisions": 808,
-        "emulator_frames": 3260,
+        "raw_return": 14.0,
+        "decisions": 642,
+        "emulator_frames": 2596,
         "terminated": true,
         "truncated": false,
         "complete": true
       },
       {
         "reset_seed": 20001,
-        "raw_return": 21.0,
-        "decisions": 896,
-        "emulator_frames": 3609,
+        "raw_return": 9.0,
+        "decisions": 526,
+        "emulator_frames": 2130,
         "terminated": true,
         "truncated": false,
         "complete": true
       },
       {
         "reset_seed": 20002,
-        "raw_return": 12.0,
-        "decisions": 613,
-        "emulator_frames": 2470,
+        "raw_return": 20.0,
+        "decisions": 666,
+        "emulator_frames": 2682,
         "terminated": true,
         "truncated": false,
         "complete": true
       },
       {
         "reset_seed": 20003,
-        "raw_return": 14.0,
-        "decisions": 667,
-        "emulator_frames": 2685,
+        "raw_return": 20.0,
+        "decisions": 886,
+        "emulator_frames": 3562,
         "terminated": true,
         "truncated": false,
         "complete": true
       }
     ],
-    "roots": 2984,
+    "roots": 2720,
     "split": "episodes [0, 1] train / rest test",
     "policy": "epsilon-greedy Q, epsilon=0.1",
     "seed_base": 20000
   },
   "spectrum_online": {
     "dims": 3136,
-    "samples": 2984,
-    "total_variance": 1360.784029003038,
-    "participation_ratio": 10.45282205568551,
-    "effective_rank_entropy": 29.627989929338263,
-    "top1_variance_frac": 0.24406491987047615,
-    "top10_variance_frac": 0.699127245136673,
-    "dims_for_90pct": 45,
-    "dims_for_99pct": 367
+    "samples": 2720,
+    "total_variance": 1300.5315355787584,
+    "participation_ratio": 13.173175853162743,
+    "effective_rank_entropy": 37.509118136540366,
+    "top1_variance_frac": 0.21714747448849295,
+    "top10_variance_frac": 0.6530507091178925,
+    "dims_for_90pct": 55,
+    "dims_for_99pct": 402
   },
   "spectrum_target": {
     "dims": 3136,
-    "samples": 2984,
-    "total_variance": 1360.605735454188,
-    "participation_ratio": 10.461919699915377,
-    "effective_rank_entropy": 29.8706803817646,
-    "top1_variance_frac": 0.24439494782505894,
-    "top10_variance_frac": 0.69670596041002,
-    "dims_for_90pct": 45,
-    "dims_for_99pct": 371
+    "samples": 2720,
+    "total_variance": 1298.627886731691,
+    "participation_ratio": 13.435235954843959,
+    "effective_rank_entropy": 38.47430344733042,
+    "top1_variance_frac": 0.21559489763768971,
+    "top10_variance_frac": 0.6460661101415084,
+    "dims_for_90pct": 56,
+    "dims_for_99pct": 407
   },
   "temporal_structure": {
     "gap_1": {
-      "pairs": 2980,
-      "mean_cosine_distance": 0.04097313433885574
+      "pairs": 2716,
+      "mean_cosine_distance": 0.04660876840353012
     },
     "gap_2": {
-      "pairs": 2976,
-      "mean_cosine_distance": 0.07564526051282883
+      "pairs": 2712,
+      "mean_cosine_distance": 0.08678311854600906
     },
     "gap_5": {
-      "pairs": 2964,
-      "mean_cosine_distance": 0.14183199405670166
+      "pairs": 2700,
+      "mean_cosine_distance": 0.16251471638679504
     },
     "gap_10": {
-      "pairs": 2944,
-      "mean_cosine_distance": 0.1912497878074646
+      "pairs": 2680,
+      "mean_cosine_distance": 0.21924139559268951
     },
     "gap_20": {
-      "pairs": 2904,
-      "mean_cosine_distance": 0.243510439991951
+      "pairs": 2640,
+      "mean_cosine_distance": 0.27614590525627136
     },
     "gap_50": {
-      "pairs": 2784,
-      "mean_cosine_distance": 0.3591463267803192
+      "pairs": 2520,
+      "mean_cosine_distance": 0.3955148458480835
     },
     "different_episode": {
-      "pairs": 3030,
-      "mean_cosine_distance": 1.033310890197754
+      "pairs": 3024,
+      "mean_cosine_distance": 1.0424455404281616
     }
   },
   "state_decodability": {
     "targets": "ALE RAM bytes",
     "ridge_lambda": 0.01,
-    "probe_components": 170,
-    "varying_targets": 43,
-    "mean_r2_over_varying": -16.578857599303102,
-    "median_r2_over_varying": 0.06754062041634867,
-    "targets_r2_above_0.5": 14,
-    "targets_r2_above_0.9": 1,
+    "probe_components": 116,
+    "varying_targets": 41,
+    "mean_r2_over_varying": -0.35660063568490513,
+    "median_r2_over_varying": -0.12229270020680216,
+    "targets_r2_above_0.5": 0,
+    "targets_r2_above_0.9": 0,
     "best_targets": [
       {
-        "index": 91,
-        "r2": 0.9291149172160831
-      },
-      {
         "index": 12,
-        "r2": 0.8333934337666673
+        "r2": 0.44955758351398756
       },
       {
         "index": 6,
-        "r2": 0.7353557035807823
+        "r2": 0.4388226951241828
+      },
+      {
+        "index": 30,
+        "r2": 0.3483841755177345
       },
       {
         "index": 103,
-        "r2": 0.7288284060403938
+        "r2": 0.2865363223322379
+      },
+      {
+        "index": 82,
+        "r2": 0.28506867897544497
+      },
+      {
+        "index": 99,
+        "r2": 0.2170196042436794
+      },
+      {
+        "index": 18,
+        "r2": 0.20588575842754453
       },
       {
         "index": 77,
-        "r2": 0.7245470144250343
-      },
-      {
-        "index": 24,
-        "r2": 0.7087209421414848
-      },
-      {
-        "index": 70,
-        "r2": 0.6838606027830114
-      },
-      {
-        "index": 72,
-        "r2": 0.6770325068526508
+        "r2": 0.17278726084287632
       }
     ],
     "note": "evaluation-only probe; the emulator state is never an agent input",
     "labelled_ram": {
-      "player_x": 0.6770325068526508,
-      "ball_x": 0.566213060462103,
-      "ball_y": -0.1950534244675255,
-      "blocks_hit_count": 0.7245470144250343,
-      "score": -0.7805393501847382
+      "player_x": 0.018977835157970246,
+      "ball_x": 0.2170196042436794,
+      "ball_y": -1.6001456660794329,
+      "blocks_hit_count": 0.17278726084287632,
+      "score": -1.366746729507987
     },
     "label_caveat": "Breakout player_x/ball_x/ball_y verified here by pixel correlation; other indices are published annotations"
   },
   "reward_event_probe": {
     "horizon_decisions": 8,
-    "base_rate_test": 0.1625,
-    "test_r2": 0.097394589209581,
-    "test_auc": 0.9376479979908151,
+    "base_rate_test": 0.19072164948453607,
+    "test_r2": -0.8354609165834845,
+    "test_auc": 0.7877861938371492,
     "note": "AUC 0.5 means the latent carries no linear information about imminent rewards"
   },
   "movement_probe": {
     "split": "episodes [0, 1] train / [2, 3] test",
-    "train_samples": 1704,
-    "test_samples": 1280,
+    "train_samples": 1168,
+    "test_samples": 1552,
     "test_class_counts": [
-      355,
-      436,
-      489
+      398,
+      641,
+      513
     ],
-    "train_acc": 1.0,
-    "test_acc": 0.53203125,
-    "test_balanced_acc": 0.5302967080482685,
-    "test_majority_baseline_acc": 0.38203125,
+    "train_acc": 0.9982876712328768,
+    "test_acc": 0.4426546391752577,
+    "test_balanced_acc": 0.40985306441360275,
+    "test_majority_baseline_acc": 0.41301546391752575,
     "chance_balanced_acc": 0.3333333333333333,
     "note": "classes: 0 none, 1 RIGHT*, 2 LEFT* (from action meanings); sticky actions add label noise"
   },
-  "wall_time_s": 20.539448391995393,
+  "wall_time_s": 17.79797731299186,
   "train_counters": {
-    "decisions": 1500000,
-    "updates": 373750,
-    "episodes": 3595,
-    "train_emulator_frames": 6069488,
-    "sampled_sequences": 11960000,
-    "sampled_valid_transitions": 59498173,
-    "sampled_latent_targets": 59348043,
-    "eval_decisions": 65501,
-    "eval_emulator_frames": 262345,
+    "decisions": 2500000,
+    "updates": 623750,
+    "episodes": 5185,
+    "train_emulator_frames": 10099138,
+    "sampled_sequences": 19960000,
+    "sampled_valid_transitions": 99368309,
+    "sampled_latent_targets": 99153727,
+    "eval_decisions": 110378,
+    "eval_emulator_frames": 442082,
     "warmup_until": 5000,
-    "resume_count": 0,
-    "wall_time_s": 2965.7567683619855
+    "resume_count": 1,
+    "wall_time_s": 4461.241104630957
   }
 }

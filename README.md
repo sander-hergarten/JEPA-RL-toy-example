@@ -5,17 +5,24 @@ pixels by predicting future *representations* (not pixels), and uses that model 
 The question it is built to answer: does predicting future representations produce a world model that
 supports better decisions than the same network's Q-policy?
 
-**Headline (Breakout, 1.5M decisions, 3 seeds, ε = 0.01):**
+**Headline (Breakout, 2.5M decisions, 3 seeds, ε = 0.01):**
 
 | | Q-policy | One-step lookahead |
 |---|---|---|
-| Model-free Double DQN baseline | +13.67 ± 2.10 | – |
-| **World model + delta target + motion channels** | **+17.30 ± 3.06** | **+38.77 ± 3.19** |
-| Offline-pretrained ("learn by observing"), fine-tuned | +11.57 ± 0.81 | +20.67 ± 2.32 |
-| Offline-pretrained, frozen encoder | +1.73 ± 0.21 | +1.97 ± 0.25 |
+| Model-free Double DQN baseline | +18.87 ± 1.83 | – |
+| **World model + delta target + motion channels** | **+22.03 ± 2.57** | **+57.70 ± 5.20** |
 
-At the originally specified 500k budget the same joint model scores +13.63 / +25.53 against +8.10 for
-the baseline, so the advantage grows with budget rather than washing out.
+Planning with the learned model adds **+35.7 points** over the same checkpoint's own Q-policy and
+reaches ~3.1× the model-free baseline. The margin grows with budget rather than washing out:
+
+| Budget | Model-free | World model + lookahead |
+|---|---|---|
+| 500k | +8.10 | +25.53 |
+| 1.5M | +13.67 | +38.77 |
+| 2.5M | +18.87 | **+57.70** |
+
+Offline "learn by observing" pretraining (1.5M) reaches +20.67 fine-tuned and +1.97 frozen — see
+[that section](#learn-by-observing-offline-jepa-pretraining-then-re-attach-rl).
 
 Planning with the learned model beats the same checkpoint's Q-policy **in every seed** (+9 to +15
 points) and roughly triples the model-free baseline. The decisive change was not the planner, the
@@ -436,7 +443,7 @@ diagnostic failure in the previous one. In short:
 | 4 | Breakout, 500k | Ordering reverses: model-free wins (+8.1); B's latent collapses to **rank 3.9** |
 | 5 | Ball sensitivity: delta target and motion channels, 100k, both games | Delta target fixes collapse and action-blindness at 1/5 the budget |
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
-| 8 | Long run: 1.5M decisions, Breakout, 4 variants | Joint delta+motion reaches **+38.8 with lookahead** (2.8× model-free); offline fine-tuned +20.7; frozen stays flat at +2 for the whole run |
+| 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
 What held up across both games:
@@ -886,7 +893,7 @@ Caveats, because this is one configuration per game: the dataset comes from a we
 diagnostics; and frozen transfer is the strictest possible test. A larger or more expert dataset, a
 tuned anti-collapse weight, or a linear probe head instead of full RL might all change the picture.
 
-### Long run: 1.5M decisions, Breakout, four variants
+### Long runs: 1.5M and 2.5M decisions, Breakout
 
 Three times the previous budget, 3 seeds each, same protocol (evaluation ε = 0.01, 10 episodes per seed,
 episodes capped at 10k decisions). `configs/long/`, launched with `scripts/run_long_breakout.sh`.
@@ -900,6 +907,19 @@ episodes capped at 10k decisions). `configs/long/`, launched with `scripts/run_l
 
 Per-seed lookahead for the live model: 43.2, 35.8, 37.3. Every seed beats every seed of every other
 variant.
+
+**Extended to 2.5M** for the two strongest arms (the offline ones stayed at 1.5M):
+
+| Variant | 1.5M Q | 2.5M Q | 1.5M lookahead | 2.5M lookahead |
+|---|---|---|---|---|
+| Model-free | +13.67 ± 2.10 | +18.87 ± 1.83 | – | – |
+| **Live delta + motion** | +17.30 ± 3.06 | **+22.03 ± 2.57** | +38.77 ± 3.19 | **+57.70 ± 5.20** |
+
+Per-seed at 2.5M: Q 23.7 / 18.4 / 24.0, lookahead **64.9 / 55.4 / 52.8**. Neither variant has plateaued,
+and the planning gain keeps growing with the model's quality (+12 points at 500k, +21 at 1.5M, +36 at
+2.5M). The representation also keeps improving rather than degrading with more RL: effective rank
+299 → 326, ball_x R² 0.84 → 0.87, paddle 0.67 → 0.74, reward-event AUC 0.92 → 0.96, while the
+model-free encoder stays at rank 29 → 35 with the paddle still not linearly decodable (−0.29 → −0.07).
 
 1. **The gap widens with budget.** Joint training with lookahead goes 25.5 → 38.8 while the model-free
    baseline goes 8.1 → 13.7, so the ratio holds at ~2.8× and the absolute margin grows from +17 to +25

@@ -9,18 +9,18 @@
     "episodes": [
       {
         "reset_seed": 20000,
-        "raw_return": 10.0,
-        "decisions": 478,
-        "emulator_frames": 1939,
+        "raw_return": 21.0,
+        "decisions": 884,
+        "emulator_frames": 3562,
         "terminated": true,
         "truncated": false,
         "complete": true
       },
       {
         "reset_seed": 20001,
-        "raw_return": 6.0,
-        "decisions": 375,
-        "emulator_frames": 1524,
+        "raw_return": 17.0,
+        "decisions": 641,
+        "emulator_frames": 2588,
         "terminated": true,
         "truncated": false,
         "complete": true
@@ -28,168 +28,168 @@
       {
         "reset_seed": 20002,
         "raw_return": 13.0,
-        "decisions": 442,
-        "emulator_frames": 1788,
+        "decisions": 456,
+        "emulator_frames": 1841,
         "terminated": true,
         "truncated": false,
         "complete": true
       },
       {
         "reset_seed": 20003,
-        "raw_return": 4.0,
-        "decisions": 296,
-        "emulator_frames": 1202,
+        "raw_return": 37.0,
+        "decisions": 994,
+        "emulator_frames": 3992,
         "terminated": true,
         "truncated": false,
         "complete": true
       }
     ],
-    "roots": 1591,
+    "roots": 2975,
     "split": "episodes [0, 1] train / rest test",
     "policy": "epsilon-greedy Q, epsilon=0.1",
     "seed_base": 20000
   },
   "spectrum_online": {
     "dims": 3136,
-    "samples": 1591,
-    "total_variance": 1388.2822403881687,
-    "participation_ratio": 8.577227020242505,
-    "effective_rank_entropy": 24.79522302770624,
-    "top1_variance_frac": 0.2872449497232561,
-    "top10_variance_frac": 0.7302955402755847,
-    "dims_for_90pct": 39,
-    "dims_for_99pct": 297
+    "samples": 2975,
+    "total_variance": 1554.2909033050914,
+    "participation_ratio": 11.890007665936533,
+    "effective_rank_entropy": 33.28825952473818,
+    "top1_variance_frac": 0.22097730232094004,
+    "top10_variance_frac": 0.6886614762669323,
+    "dims_for_90pct": 52,
+    "dims_for_99pct": 407
   },
   "spectrum_target": {
     "dims": 3136,
-    "samples": 1591,
-    "total_variance": 1401.3620673064495,
-    "participation_ratio": 8.818312101322,
-    "effective_rank_entropy": 25.908571736942623,
-    "top1_variance_frac": 0.283935019337877,
-    "top10_variance_frac": 0.7216593434589046,
-    "dims_for_90pct": 41,
-    "dims_for_99pct": 305
+    "samples": 2975,
+    "total_variance": 1520.7731416654756,
+    "participation_ratio": 11.675099770651421,
+    "effective_rank_entropy": 32.70715121585217,
+    "top1_variance_frac": 0.22430709243595928,
+    "top10_variance_frac": 0.6920413802762706,
+    "dims_for_90pct": 51,
+    "dims_for_99pct": 403
   },
   "temporal_structure": {
     "gap_1": {
-      "pairs": 1587,
-      "mean_cosine_distance": 0.05136891454458237
+      "pairs": 2971,
+      "mean_cosine_distance": 0.04437338560819626
     },
     "gap_2": {
-      "pairs": 1583,
-      "mean_cosine_distance": 0.09833334386348724
+      "pairs": 2967,
+      "mean_cosine_distance": 0.08272567391395569
     },
     "gap_5": {
-      "pairs": 1571,
-      "mean_cosine_distance": 0.1876893788576126
+      "pairs": 2955,
+      "mean_cosine_distance": 0.15222159028053284
     },
     "gap_10": {
-      "pairs": 1551,
-      "mean_cosine_distance": 0.2559594213962555
+      "pairs": 2935,
+      "mean_cosine_distance": 0.20342017710208893
     },
     "gap_20": {
-      "pairs": 1511,
-      "mean_cosine_distance": 0.3238014280796051
+      "pairs": 2895,
+      "mean_cosine_distance": 0.2583862543106079
     },
     "gap_50": {
-      "pairs": 1391,
-      "mean_cosine_distance": 0.48031139373779297
+      "pairs": 2775,
+      "mean_cosine_distance": 0.3697545528411865
     },
     "different_episode": {
-      "pairs": 3040,
-      "mean_cosine_distance": 1.0501370429992676
+      "pairs": 2998,
+      "mean_cosine_distance": 1.047437071800232
     }
   },
   "state_decodability": {
     "targets": "ALE RAM bytes",
     "ridge_lambda": 0.01,
-    "probe_components": 85,
-    "varying_targets": 40,
-    "mean_r2_over_varying": -0.6728230586568777,
-    "median_r2_over_varying": -0.3178326293549866,
-    "targets_r2_above_0.5": 4,
+    "probe_components": 152,
+    "varying_targets": 45,
+    "mean_r2_over_varying": -0.6818727506330221,
+    "median_r2_over_varying": -0.24908918932814683,
+    "targets_r2_above_0.5": 5,
     "targets_r2_above_0.9": 0,
     "best_targets": [
       {
-        "index": 12,
-        "r2": 0.882982333174263
-      },
-      {
-        "index": 19,
-        "r2": 0.7713694065310184
-      },
-      {
-        "index": 18,
-        "r2": 0.7018389364058006
-      },
-      {
-        "index": 99,
-        "r2": 0.607525443317368
-      },
-      {
-        "index": 82,
-        "r2": 0.4356961017412967
-      },
-      {
-        "index": 24,
-        "r2": 0.3258042594256966
-      },
-      {
         "index": 31,
-        "r2": 0.2299140336455564
+        "r2": 0.7905216348696957
+      },
+      {
+        "index": 7,
+        "r2": 0.7879751290215626
+      },
+      {
+        "index": 26,
+        "r2": 0.6564751095551324
       },
       {
         "index": 30,
-        "r2": 0.20424613639145617
+        "r2": 0.6450293816114925
+      },
+      {
+        "index": 6,
+        "r2": 0.5288197824107352
+      },
+      {
+        "index": 103,
+        "r2": 0.47027627195633515
+      },
+      {
+        "index": 99,
+        "r2": 0.42704851750651374
+      },
+      {
+        "index": 57,
+        "r2": 0.23020360053426958
       }
     ],
     "note": "evaluation-only probe; the emulator state is never an agent input",
     "labelled_ram": {
-      "player_x": -1.694834755619305,
-      "ball_x": 0.607525443317368,
-      "ball_y": -0.6634088625150987,
-      "blocks_hit_count": -0.14817464413409298,
-      "score": -2.4561166611067264
+      "player_x": 0.11352520633757146,
+      "ball_x": 0.42704851750651374,
+      "ball_y": -1.6342300449527212,
+      "blocks_hit_count": -0.34837221013770114,
+      "score": -0.5472360986864175
     },
     "label_caveat": "Breakout player_x/ball_x/ball_y verified here by pixel correlation; other indices are published annotations"
   },
   "reward_event_probe": {
     "horizon_decisions": 8,
-    "base_rate_test": 0.15176151761517614,
-    "test_r2": -1.0391880441477057,
-    "test_auc": 0.8064525330899132,
+    "base_rate_test": 0.19310344827586207,
+    "test_r2": 0.23601480220102977,
+    "test_auc": 0.8596001221001222,
     "note": "AUC 0.5 means the latent carries no linear information about imminent rewards"
   },
   "movement_probe": {
     "split": "episodes [0, 1] train / [2, 3] test",
-    "train_samples": 853,
-    "test_samples": 738,
+    "train_samples": 1525,
+    "test_samples": 1450,
     "test_class_counts": [
-      462,
-      82,
-      194
+      840,
+      247,
+      363
     ],
     "train_acc": 1.0,
-    "test_acc": 0.5311653116531165,
-    "test_balanced_acc": 0.5761708467265421,
-    "test_majority_baseline_acc": 0.6260162601626016,
+    "test_acc": 0.4882758620689655,
+    "test_balanced_acc": 0.4970886901508911,
+    "test_majority_baseline_acc": 0.5793103448275863,
     "chance_balanced_acc": 0.3333333333333333,
     "note": "classes: 0 none, 1 RIGHT*, 2 LEFT* (from action meanings); sticky actions add label noise"
   },
-  "wall_time_s": 10.126501230988652,
+  "wall_time_s": 22.204989799996838,
   "train_counters": {
-    "decisions": 1500000,
-    "updates": 373750,
-    "episodes": 3481,
-    "train_emulator_frames": 6067460,
-    "sampled_sequences": 11960000,
-    "sampled_valid_transitions": 59511157,
-    "sampled_latent_targets": 59367186,
-    "eval_decisions": 75482,
-    "eval_emulator_frames": 302273,
+    "decisions": 2500000,
+    "updates": 623750,
+    "episodes": 5223,
+    "train_emulator_frames": 10100956,
+    "sampled_sequences": 19960000,
+    "sampled_valid_transitions": 99369952,
+    "sampled_latent_targets": 99155620,
+    "eval_decisions": 130037,
+    "eval_emulator_frames": 520723,
     "warmup_until": 5000,
-    "resume_count": 0,
-    "wall_time_s": 2983.4806219009915
+    "resume_count": 1,
+    "wall_time_s": 4491.242274284014
   }
 }
