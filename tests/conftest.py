@@ -57,7 +57,10 @@ def random_batch(B: int = 4, K: int = 3, A: int = 4, seed: int = 0):
     valid[1, 2:] = False
     truncated[2, 0] = True
     valid[2, 1:] = False
-    rewards = torch.tensor([[0.0, 1.0, -1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])[:B, :K]
+    base = torch.tensor([[0.0, 1.0, -1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    rewards = torch.zeros(B, K)
+    rows, cols = min(B, base.shape[0]), min(K, base.shape[1])
+    rewards[:rows, :cols] = base[:rows, :cols]  # extra rows/steps stay zero-reward
     rewards = torch.where(valid, rewards, torch.zeros_like(rewards))
     obs_valid = torch.ones(B, K + 1, dtype=torch.bool)
     obs_valid[:, 1:] = valid

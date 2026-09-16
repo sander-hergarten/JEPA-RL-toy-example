@@ -84,6 +84,12 @@ class NetworkConfig:
 class LossConfig:
     # Root Q-loss is always on. The flags below select the ablation variant.
     q_imagined: bool = False  # Q-loss on imagined depths 1..K as well
+    # How many imagined depths the Q-loss covers; 0 means all K. Decouples the value head's
+    # supervision from the rollout length: the K sweep found that longer rollouts give a strictly
+    # better model (lower latent error at every depth) but worse control, and the damage was largest
+    # for the shallow controllers, which is what a Q head trained mostly on deep imagined latents
+    # predicts. Capping it trains long rollouts without moving the Q supervision deeper.
+    q_imagined_depth: int = 0
     jepa: bool = False
     reward: bool = False
     continuation: bool = False
@@ -128,6 +134,8 @@ class LossConfig:
             raise ValueError(f"loss.n_step must be >= 1, got {self.n_step}")
         if self.hierarchical and self.macro_horizon < 2:
             raise ValueError(f"loss.macro_horizon must be >= 2, got {self.macro_horizon}")
+        if self.q_imagined_depth < 0:
+            raise ValueError(f"loss.q_imagined_depth must be >= 0 (0 = all K), got {self.q_imagined_depth}")
         if self.jepa_target not in ("absolute", "batch_centered", "delta"):
             raise ValueError(
                 f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
@@ -145,6 +153,8 @@ class LossConfig:
         suffix = "" if self.inverse == "none" else f"+inverse_{self.inverse}"
         if self.jepa and self.jepa_target != "absolute":
             suffix += f"+jepa_{self.jepa_target}"
+        if self.q_imagined and self.q_imagined_depth:
+            suffix += f"+qdepth{self.q_imagined_depth}"
         if self.q_imagined and self.jepa and self.reward and self.continuation:
             return "C_world_model" + suffix
         if self.jepa and not (self.reward or self.continuation or self.q_imagined):

@@ -254,7 +254,8 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
     rewards = batch.rewards.float()
     latent_mask = valid & ~terminated  # l_k
 
-    q_depths = K if cfg.q_imagined else 1  # Q supervised on z_hat[0 .. q_depths-1]
+    # Q supervised on z_hat[0 .. q_depths-1]; q_imagined_depth caps that independently of K
+    q_depths = min(cfg.q_imagined_depth or K, K) if cfg.q_imagined else 1
     n_targets = max(q_depths, K if cfg.jepa else 0)  # target encodings needed for obs 1..n_targets
     if cfg.jepa or cfg.inverse == "predicted":
         steps = K

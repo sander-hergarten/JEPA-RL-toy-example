@@ -112,3 +112,39 @@ def test_n_step_flows_through_compute_losses():
     _, m3 = compute_losses(model, batch, cfg.loss)
     assert m1["q_target_mean"] != m3["q_target_mean"]  # the target actually changed
     assert np.isfinite(m3["loss_q"]) and m3["loss_q"] > 0
+
+
+@pytest.mark.parametrize("cap,expected", [(0, 6), (2, 2), (99, 6)])
+def test_q_imagined_depth_caps_the_value_supervision_independently_of_k(cap, expected):
+    """The Q-loss covers min(cap or K, K) imagined depths, while the rollout stays K steps long."""
+    from conftest import random_batch, world_model_config
+
+    from atari_jepa.agent import WorldModel
+    from atari_jepa.losses import compute_losses
+
+    K = 6
+    cfg = world_model_config()
+    cfg.replay.rollout_steps = K
+    cfg.loss.q_imagined_depth = cap
+    torch.manual_seed(0)
+    model = WorldModel(cfg, num_actions=4)
+    loss, metrics = compute_losses(model, random_batch(K=K), cfg.loss)
+    loss.backward()
+
+    depths = sorted(int(k[len("q_td_d"):]) for k in metrics if k.startswith("q_td_d"))
+    assert depths == list(range(expected))
+    # the rollout itself is untouched: the JEPA loss still supervises all K steps
+    assert sorted(int(k[len("jepa_d"):]) for k in metrics if k.startswith("jepa_d")) == list(range(1, K + 1))
+    assert torch.isfinite(loss) and any(p.grad is not None for p in model.q_head.parameters())
+
+
+def test_q_imagined_depth_is_rejected_when_negative_and_named_in_the_variant():
+    from atari_jepa.config import LossConfig
+
+    with pytest.raises(ValueError, match="q_imagined_depth"):
+        LossConfig(q_imagined_depth=-1)
+    named = LossConfig(q_imagined=True, jepa=True, reward=True, continuation=True,
+                       jepa_target="delta", q_imagined_depth=5)
+    assert named.variant_name().endswith("+qdepth5")
+    assert "qdepth" not in LossConfig(q_imagined=True, jepa=True, reward=True,
+                                      continuation=True).variant_name()
