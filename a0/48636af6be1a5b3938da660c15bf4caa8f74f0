@@ -1,0 +1,45 @@
+configs/sample_eff/breakout_se_lmu_k10_500k.yaml
+  s_5ed1a669ec401e::t_1575a819b71e6a 1-67
+configs/sample_eff/breakout_se_lmu_k10_offline_finetune_500k.yaml
+  s_5ed1a669ec401e::t_01170f631f7bbb 1-73
+configs/sample_eff/breakout_se_lmu_k10_offline_frozen_500k.yaml
+  s_5ed1a669ec401e::t_f8dedee448956f 1-73
+configs/sample_eff/breakout_se_lmu_k20_500k.yaml
+  s_5ed1a669ec401e::t_d346786ca482cd 1-67
+configs/sample_eff/breakout_se_lmu_k30_500k.yaml
+  s_5ed1a669ec401e::t_00e08386fe6be7 1-67
+configs/sample_eff/breakout_se_lmu_k30_offline_finetune_500k.yaml
+  s_5ed1a669ec401e::t_74329dbb36de9f 1-73
+configs/sample_eff/breakout_se_lmu_k30_offline_frozen_500k.yaml
+  s_5ed1a669ec401e::t_045e30d3c33611 1-73
+configs/sample_eff/breakout_se_lmu_k5_offline_finetune_500k.yaml
+  s_5ed1a669ec401e::t_9de2f80f566aca 1-73
+configs/sample_eff/breakout_se_lmu_k5_offline_frozen_500k.yaml
+  s_5ed1a669ec401e::t_dbadbcebc04056 1-73
+scripts/run_queue.sh
+  s_5ed1a669ec401e::t_f647b7a052b53c 9-10
+scripts/run_wave17.sh
+  s_5ed1a669ec401e::t_22590a73116fe2 1-49
+scripts/run_wave18.sh
+  s_5ed1a669ec401e::t_3971f1c8df7bca 1-58
+src/atari_jepa/train.py
+  s_5ed1a669ec401e::t_bdab3d583b4e3c 97-103,108-110,113-124,126,128
+tests/test_lmu.py
+  s_5ed1a669ec401e::t_650006236a79e0 137-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a048636af6be1a5b3938da660c15bf4caa8f74f0",
+  "prompts": {},
+  "sessions": {
+    "s_5ed1a669ec401e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5ed1a669ec401e",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
