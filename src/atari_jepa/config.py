@@ -66,6 +66,15 @@ class NetworkConfig:
     # Append signed differences of consecutive frames in the stack as extra encoder input channels.
     # The ball is the only fast small mover, so differencing removes the static background from the input.
     motion_channels: bool = False
+    # Dynamics core: "conv" is the memoryless residual map g(z, a); "lmu" adds a Legendre Memory Unit,
+    # whose fixed Legendre Delay Network matrices hold an orthogonal representation of the rollout's own
+    # history over a window of lmu_theta steps. The rollout then has state: step k can see what happened
+    # at steps < k, which a memoryless map cannot.
+    dynamics_kind: str = "conv"
+    lmu_order: int = 8  # Legendre polynomial order d: the memory is a d-coefficient window summary
+    lmu_theta: float = 5.0  # window length in decisions the memory represents
+    lmu_signals: int = 32  # scalar signals fed into the memory, each with its own d coefficients
+    lmu_context: int = 32  # channels the decoded memory contributes to the conv trunk
     macro_hidden: int = 256
     successor_hidden: int = 512
     sf_dim: int = 256  # width of the fixed random feature basis phi the successor head regresses
@@ -81,6 +90,10 @@ class NetworkConfig:
     def __post_init__(self) -> None:
         if self.conv_dtype not in ("float32", "bfloat16"):
             raise ValueError(f"network.conv_dtype must be float32 or bfloat16, got {self.conv_dtype!r}")
+        if self.dynamics_kind not in ("conv", "lmu"):
+            raise ValueError(f"network.dynamics_kind must be conv or lmu, got {self.dynamics_kind!r}")
+        if self.dynamics_kind == "lmu" and (self.lmu_order < 1 or self.lmu_theta <= 0):
+            raise ValueError(f"lmu_order must be >= 1 and lmu_theta > 0, got {self.lmu_order}, {self.lmu_theta}")
 
 
 @dataclass

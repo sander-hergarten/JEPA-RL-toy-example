@@ -11,7 +11,7 @@ from torch import nn
 
 from .config import Config
 from .networks import (ContinuationHead, Dynamics, Encoder, FeatureProjection, InverseDynamicsHead,
-                       MacroDynamics, MacroHead, QHead, RewardHead, SuccessorHead)
+                       LMUDynamics, MacroDynamics, MacroHead, QHead, RewardHead, SuccessorHead)
 
 
 class WorldModel(nn.Module):
@@ -29,7 +29,8 @@ class WorldModel(nn.Module):
                                net.motion_channels)
         self.latent_shape = self.encoder.latent_shape
         latent_dim = int(np.prod(self.latent_shape))
-        self.dynamics = Dynamics(self.latent_shape, num_actions, net)
+        core = LMUDynamics if net.dynamics_kind == "lmu" else Dynamics
+        self.dynamics = core(self.latent_shape, num_actions, net)
         self.q_head = QHead(latent_dim, num_actions, net.q_hidden)
         self.reward_head = RewardHead(latent_dim, num_actions, net.reward_hidden)
         self.continuation_head = ContinuationHead(latent_dim, num_actions, net.continuation_hidden)

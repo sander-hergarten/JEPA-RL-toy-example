@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .losses import expected_reward
+from .losses import dynamics_step, expected_reward
 
 
 def leaf_values(model, z: torch.Tensor, bootstrap: str) -> torch.Tensor:
@@ -58,13 +58,15 @@ def beam_search(model, z: torch.Tensor, horizon: int, beam_width: int, gamma: fl
     J = torch.zeros(1, device=device)
     S = torch.ones(1, device=device)
     first = torch.full((1,), -1, dtype=torch.long, device=device)
+    state = None  # dynamics state, carried (and re-ordered with the beams) for a recurrent core
     for k in range(horizon):
         N = zs.shape[0]
         zr = zs.repeat_interleave(A, dim=0)
         acts = torch.arange(A, device=device).repeat(N)
         reward = expected_reward(model.reward_head(zr, acts))
         cont = torch.sigmoid(model.continuation_head(zr, acts))
-        next_z = model.dynamics(zr, acts)
+        sr = None if state is None else state.repeat_interleave(A, dim=0)
+        next_z, state = dynamics_step(model.dynamics, zr, acts, sr)
         Jr, Sr = J.repeat_interleave(A), S.repeat_interleave(A)
         J = Jr + gamma**k * Sr * reward
         S = Sr * cont
@@ -76,6 +78,7 @@ def beam_search(model, z: torch.Tensor, horizon: int, beam_width: int, gamma: fl
             return int(first[best]), float(score[best])
         order = torch.sort(score, descending=True, stable=True).indices[:beam_width]
         zs, J, S, first = next_z[order], J[order], S[order], first[order]
+        state = None if state is None else state[order]  # the memory follows its own beam
     raise ValueError("horizon must be >= 1")
 
 

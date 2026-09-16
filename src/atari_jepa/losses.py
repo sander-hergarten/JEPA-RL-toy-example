@@ -232,11 +232,24 @@ def n_step_targets(rewards: torch.Tensor, terminated: torch.Tensor, valid: torch
     return torch.stack(out, dim=1)
 
 
+def dynamics_step(dynamics, z: torch.Tensor, action: torch.Tensor, state):
+    """``(z', state')`` from a dynamics core. Anything without a ``step`` method is memoryless."""
+    step = getattr(dynamics, "step", None)
+    if step is None:
+        return dynamics(z, action), None
+    return step(z, action, state)
+
+
 def unroll(dynamics: torch.nn.Module, z0: torch.Tensor, actions: torch.Tensor, steps: int) -> list[torch.Tensor]:
-    """z_hat[0] = z0, z_hat[k+1] = g(z_hat[k], a_k). Predictions are never detached or replaced."""
-    z_hat = [z0]
+    """z_hat[0] = z0, z_hat[k+1] = g(z_hat[k], a_k). Predictions are never detached or replaced.
+
+    The dynamics state is threaded through the rollout, so a recurrent core (LMUDynamics) sees the
+    history of the rollout rather than restarting at every step. A memoryless core returns None for it.
+    """
+    z_hat, state = [z0], None
     for k in range(steps):
-        z_hat.append(dynamics(z_hat[k], actions[:, k]))
+        z_next, state = dynamics_step(dynamics, z_hat[k], actions[:, k], state)
+        z_hat.append(z_next)
     return z_hat
 
 

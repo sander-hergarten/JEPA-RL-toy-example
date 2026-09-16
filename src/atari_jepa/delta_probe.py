@@ -43,7 +43,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .checkpoint import load_checkpoint, model_from_checkpoint
-from .losses import cosine_distance
+from .losses import cosine_distance, dynamics_step
 from .networks import JumpHead
 from .replay import SequenceReplay
 from .utils import configure_threads, select_device, write_json
@@ -120,8 +120,9 @@ def iterated_prediction(model, z: torch.Tensor, replay: SequenceReplay, roots: n
         zi = z[i : i + chunk]
         idx = (roots[i : i + chunk, None] + np.arange(delta)[None, :]) % replay.capacity
         acts = torch.from_numpy(replay.actions[idx]).to(z.device)
+        state = None
         for k in range(delta):
-            zi = model.dynamics(zi, acts[:, k])
+            zi, state = dynamics_step(model.dynamics, zi, acts[:, k], state)
         preds.append(zi)
     return torch.cat(preds)
 

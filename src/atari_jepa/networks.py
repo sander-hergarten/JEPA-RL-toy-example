@@ -103,6 +103,11 @@ class Dynamics(nn.Module):
             delta = self.conv_out(self.blocks(h))
         return self.norm(z + delta.float())
 
+    def step(self, z: torch.Tensor, action: torch.Tensor,
+             state: None = None) -> tuple[torch.Tensor, None]:
+        """Stateful interface shared with LMUDynamics; this map is memoryless, so the state stays None."""
+        return self(z, action), None
+
 
 class QHead(nn.Module):
     def __init__(self, latent_dim: int, num_actions: int, hidden: int):
@@ -262,3 +267,82 @@ class SuccessorHead(ActionHead):
 
     def __init__(self, latent_dim: int, num_actions: int, hidden: int, sf_dim: int):
         super().__init__(latent_dim, num_actions, hidden, sf_dim)
+
+
+def legendre_delay_matrices(order: int, theta: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Discrete-time Legendre Delay Network matrices for a window of ``theta`` steps.
+
+    The LDN (Voelker, Kajic & Eliasmith, 2019) is the linear ODE whose state holds the coefficients of
+    the Legendre expansion of the last ``theta`` steps of a scalar signal:
+
+        m'(t) = (1/theta) (A m(t) + B u(t)),
+        A_ij = (2i+1) * (-1 if i < j else (-1)^(i-j+1)),   B_i = (2i+1) (-1)^i
+
+    A and B are *derived*, not learned -- that is the point of the LMU: an optimal orthogonal basis for
+    a delay, fixed in advance, instead of a recurrent weight matrix that has to discover one.
+
+    Discretized here with zero-order hold at dt = 1 via one matrix exponential of the augmented system
+    [[A, B], [0, 0]] / theta, which avoids inverting A.
+    """
+    i = torch.arange(order, dtype=torch.float64)
+    ii, jj = i[:, None], i[None, :]
+    sign = torch.where(ii < jj, -torch.ones_like(ii * jj), (-1.0) ** (ii - jj + 1))
+    A = (2 * ii + 1) * sign
+    B = ((2 * i + 1) * (-1.0) ** i)[:, None]
+    aug = torch.zeros(order + 1, order + 1, dtype=torch.float64)
+    aug[:order, :order] = A / theta
+    aug[:order, order:] = B / theta
+    disc = torch.matrix_exp(aug)
+    return disc[:order, :order].float().contiguous(), disc[:order, order].float().contiguous()
+
+
+class LMUDynamics(nn.Module):
+    """g(z, a) with a Legendre memory of the rollout so far: ``(z, a, m) -> (z', m')``.
+
+    The conv trunk is identical to ``Dynamics``; the only addition is a memory state that the rollout
+    threads from step to step, so step k is conditioned on a summary of steps < k rather than on z
+    alone. A pooled view of the latent plus the action embedding drives ``lmu_signals`` scalar signals
+    into the fixed LDN, and the decoded memory is broadcast over the grid like the action embedding.
+
+    The memory is deliberately a *conditioning* signal, not a replacement for the spatial map: the
+    latent is a 7x7 grid, and a dense LMU cell over its 3136 flattened dimensions would be a far larger
+    and less comparable change than the one under test.
+    """
+
+    def __init__(self, latent_shape: tuple[int, int, int], num_actions: int, cfg: NetworkConfig):
+        super().__init__()
+        channels = latent_shape[0]
+        self.order, self.signals = cfg.lmu_order, cfg.lmu_signals
+        self.theta = cfg.lmu_theta
+        self.compute_dtype = _DTYPES[cfg.conv_dtype]
+        self.action_embed = nn.Embedding(num_actions, cfg.action_embed_dim)
+        self.signal_in = nn.Linear(channels + cfg.action_embed_dim, cfg.lmu_signals)
+        A, B = legendre_delay_matrices(cfg.lmu_order, cfg.lmu_theta)
+        self.register_buffer("lmu_A", A)  # buffers, not parameters: the basis is fixed by construction
+        self.register_buffer("lmu_B", B)
+        self.memory_out = nn.Linear(cfg.lmu_signals * cfg.lmu_order, cfg.lmu_context)
+        self.conv_in = nn.Conv2d(channels + cfg.action_embed_dim + cfg.lmu_context, channels, 3, padding=1)
+        self.blocks = nn.Sequential(*[ResidualBlock(channels) for _ in range(cfg.dynamics_blocks)])
+        self.conv_out = nn.Conv2d(channels, channels, 3, padding=1)
+        self.norm = nn.LayerNorm(latent_shape)
+
+    def initial_state(self, z: torch.Tensor) -> torch.Tensor:
+        return z.new_zeros(z.shape[0], self.signals, self.order)
+
+    def step(self, z: torch.Tensor, action: torch.Tensor,
+             state: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+        emb = self.action_embed(action)
+        if state is None:
+            state = self.initial_state(z)
+        u = self.signal_in(torch.cat([z.mean(dim=(2, 3)), emb], dim=1))  # [B, signals]
+        memory = state @ self.lmu_A.T + u.unsqueeze(-1) * self.lmu_B  # m_t = A m_{t-1} + B u_t
+        context = torch.cat([emb, self.memory_out(memory.flatten(1))], dim=1)
+        cond = context[:, :, None, None].expand(-1, -1, *z.shape[2:])
+        with conv_autocast(z, self.compute_dtype):
+            h = F.relu(self.conv_in(torch.cat([z, cond], dim=1)))
+            delta = self.conv_out(self.blocks(h))
+        return self.norm(z + delta.float()), memory
+
+    def forward(self, z: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Memoryless call, for the root of a search or a depth-1 probe."""
+        return self.step(z, action, None)[0]
