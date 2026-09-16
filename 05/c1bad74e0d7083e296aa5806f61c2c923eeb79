@@ -1,0 +1,37 @@
+configs/sample_eff/breakout_se_lmu_500k.yaml
+  s_d1458332cdb6aa::t_ea6b907b2f3a40 1-67
+scripts/run_queue.sh
+  s_d1458332cdb6aa::t_8c052b0aa4b05f 7-8
+scripts/run_wave16.sh
+  s_d1458332cdb6aa::t_86bb5db97e9276 1-44
+src/atari_jepa/agent.py
+  s_d1458332cdb6aa::t_bd216a594b359e 14,32-33
+src/atari_jepa/config.py
+  s_d1458332cdb6aa::t_93a9cea1898157 69-77,93-96
+src/atari_jepa/delta_probe.py
+  s_d1458332cdb6aa::t_455029eedddd3e 46,123,125
+src/atari_jepa/losses.py
+  s_d1458332cdb6aa::t_7180d805483275 235-242,244-249,251-252
+src/atari_jepa/networks.py
+  s_d1458332cdb6aa::t_1e6dbeeb581b50 106-110,270-348
+src/atari_jepa/planning.py
+  s_d1458332cdb6aa::t_370c4a604c3a65 18,61,68-69,81
+tests/test_lmu.py
+  s_d1458332cdb6aa::t_d993f6b583f673 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "05c1bad74e0d7083e296aa5806f61c2c923eeb79",
+  "prompts": {},
+  "sessions": {
+    "s_d1458332cdb6aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_d1458332cdb6aa",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
