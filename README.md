@@ -115,6 +115,10 @@ python -m atari_jepa.embeddings --checkpoint runs/pong_world_model_500k/seed0/ch
 python -m atari_jepa.diagnostics --checkpoint runs/pong_world_model/seed0/checkpoint.pt
 python -m atari_jepa.diagnostics --checkpoint RUN/checkpoint.pt --fit-fixed-batch 300 --fit-components jepa
 
+# long-range probe: a head trained directly on (x_t, x_t+delta) pairs vs the iterated one-step rollout,
+# both against the conditional-mean floor. Needs replay.save_with_checkpoint.
+python -m atari_jepa.delta_probe --checkpoint RUN/checkpoint.pt --deltas 1,5,10,30,100,300
+
 # resume an interrupted run (or use --auto-resume with --config)
 python -m atari_jepa.train --resume runs/pong_world_model/seed0
 
@@ -446,8 +450,10 @@ diagnostic failure in the previous one. In short:
 | 6 | Confirmation, 500k, both games | **Breakout: +25.5 with lookahead, ~3× model-free, every seed.** Pong stays inconclusive |
 | 9 | Sample-efficiency matrix at a fixed 500k budget, then follow-ups | **n-step is worth ~3× the samples** (any n ≥ 3); the replay-ratio failure was the *buffer size*, and n-step + rr 0.5 + a 300k buffer gives **+47.9 at 500k**; planner-driven collection hurts even when switched in late |
 | 10 | 2.5M with n-step | **+70.9 with lookahead**, 3.8× model-free |
-| 11 | Planning depth sweep on the 2.5M n-step checkpoints | Depth pays up to the training rollout horizon: **+91.7 at H = 5**, then *down* to +85.3 at H = 10 |
+| 11 | Planning depth sweep on the 2.5M n-step checkpoints | Depth pays to **+91.7 at H = 5**, then saturates (the apparent drop at H = 10 was seed noise; see the K sweep) |
 | 12 | H-JEPA level 2 (jumpy dynamics) vs. multi-step search, 500k | Joint training makes the encoder **action-blind** (shuffled-action penalty 48% → 2%) and costs everything; detached it is harmless but its jumpy planner (+29.2) still loses to beam search over level 1 (+57.3) |
+| 13 | Rollout horizon K ∈ {5, 10, 20, 30}, 500k | **A strictly better model that plays strictly worse**: K = 30 has the lowest latent error and the best movement probe and scores 36.9 against K = 5's 65.1. Capping the value horizon (`q_imagined_depth`) does not rescue it |
+| 14 | Δ-probe: directly-supervised jump vs. iterated rollout on frozen latents | Long range is **not** a training-coverage failure — a head trained at Δ = 100 cannot beat a constant. Long rollouts do extend the model's horizon, by making the representation temporally smooth |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -1049,12 +1055,16 @@ parameters — only the search depth changes). Spreads are the population std ov
 | **H = 5** | **+91.73 ± 9.93** | 98.3 / 99.2 / 77.7 | 3.08 ms | 0.73 |
 | H = 10 | +85.30 ± 5.05 | 80.6 / 92.3 / 83.0 | 6.84 ms | 0.73 |
 
-**Depth pays, then plateaus and slightly reverses.** Most of the gain is in the first step (+32 → +71);
-going 1 → 5 adds another 21 points for 1.8× the latency; going 5 → 10 *loses* 6 points while doubling
-the latency again. That is the expected shape when a learned model is unrolled beyond its training
-horizon: the dynamics were trained on K = 5-step rollouts, so H = 5 is the deepest search that stays
-inside the regime the model was fit on, and H = 10 is pure extrapolation — compounding latent error
-starts to outweigh the extra foresight. `evaluate.py` prints a warning whenever `--horizon` exceeds K.
+**Depth pays up to about H = 5, then saturates.** Most of the gain is in the first step (+32 → +71);
+going 1 → 5 adds another 21 points for 1.8× the latency; past that, nothing.
+
+*I first read the 5 → 10 step as a reversal* ("−6 points, the model extrapolating past its K = 5
+training horizon") and wrote that down as a finding. It does not survive. The per-seed columns already
+overlap (98.3 / 99.2 / 77.7 against 80.6 / 92.3 / 83.0), and the K sweep below settles it: at a matched
+500k budget the same recipe scores +65.1 / +62.0 / +62.0 / +60.3 at H = 5 / 10 / 20 / 30 — flat, not
+falling. The honest statement is saturation, and a plausible-sounding mechanism ("compounding latent
+error past K") made a noise-level difference look like a law. `evaluate.py` still prints a warning when
+`--horizon` exceeds K, which is fair as a caution but is not evidence of a penalty.
 
 Note the disagreement column: the planner overrides the greedy Q action on ~70% of decisions at every
 depth, so the extra depth is not changing *how often* it disagrees, only *how well* it chooses.
@@ -1149,21 +1159,100 @@ For these A/B/C checkpoints the weakest variable is the ball's **horizontal** po
 versus 0.85+ for vertical); the delta+motion runs later reach 0.85 on it. In Pong, x is what determines *when* the ball arrives, and it moves fastest, so it is exactly
 what a smoothness-rewarding objective discards first.
 
-### In flight: does a longer training rollout buy usable planning depth? (K sweep, 500k)
+### The rollout horizon K: a better model that plays worse (500k, Breakout)
 
-The depth sweep above stops gaining exactly at H = 5, which is `replay.rollout_steps` — the horizon the
-dynamics are unrolled and supervised over. That is suggestive, not established: the ceiling could be
-set by K, or by anything else that happens to sit near 5 steps (the ball's travel time between paddle
-contacts, the reward horizon, accumulated one-step error). `configs/sample_eff/breakout_se_k{10,20,30}_500k.yaml`
-are identical to `breakout_se_nstep_500k` except for K, and every resulting checkpoint is scored at
-H = 1, 3, 5, 10, 20, 30 (`scripts/run_wave13.sh`, 3 seeds each). If the ceiling tracks K, longer
-rollouts buy depth; if it stays near 5, K is not what sets it.
+The depth sweep stops gaining at H = 5, which is `replay.rollout_steps` — the horizon the dynamics are
+unrolled and supervised over. `configs/sample_eff/breakout_se_k{10,20,30}_500k.yaml` are identical to
+`breakout_se_nstep_500k` except for K; every checkpoint is then scored at H = 1…30 through the same
+evaluation path (`scripts/run_wave13.sh`, 3 seeds each, ε = 0.01).
 
-Two things to keep in mind when reading that table. K also lengthens the *imagined-Q* supervision
-(`q_imagined` trains Q on `z_hat[0..K-1]`), so a K = 30 arm trains its Q head on depth-30 imagined
-latents — this is "longer rollout" as a whole recipe, not a JEPA-only manipulation. And K costs
-throughput roughly linearly: measured 288 / 176 / 60 decisions per second at K = 5 / 10 / 30, so a
-K = 30 run is ~2.3 h against ~0.5 h for the control.
+| arm | Q | H=1 | H=3 | H=5 | H=10 | H=20 | H=30 |
+|---|---|---|---|---|---|---|---|
+| K=5 | +19.10 | **+40.43** | +45.57 | **+65.07** | +62.00 | +61.97 | +60.33 |
+| K=10 | +19.90 | +30.73 | +47.67 | +61.83 | +59.33 | +57.70 | +63.80 |
+| K=10 + `qd5` | +19.20 | +34.27 | +50.53 | +66.27 | +59.57 | +65.17 | +57.63 |
+| K=20 | +17.63 | +21.63 | +39.40 | +49.13 | +47.03 | +55.73 | +51.33 |
+| K=20 + `qd5` | +14.83 | +22.57 | +39.00 | +55.33 | +52.80 | +55.93 | +49.30 |
+| K=30 | +16.20 | +18.30 | +26.73 | +34.03 | +36.47 | +34.83 | +36.90 |
+
+Model quality over the same checkpoints (predicted-vs-real latent cosine distance, lower is better):
+
+| arm | d=1 | d=5 | d=10 | d=20 | d=30 | root action dist | movement probe |
+|---|---|---|---|---|---|---|---|
+| K=5 | 0.1401 | 0.2137 | 0.3292 | – | – | 0.0661 | 0.580 |
+| K=10 | 0.1349 | 0.2006 | 0.2769 | 0.4132 | 0.5022 | **0.1204** | 0.641 |
+| K=20 | 0.1192 | 0.1993 | 0.2606 | 0.3517 | 0.4307 | 0.0968 | 0.629 |
+| K=30 | **0.0971** | 0.1970 | 0.2660 | 0.3509 | 0.4189 | 0.0701 | **0.656** |
+
+**Longer rollouts give a strictly better world model that plays strictly worse.** Monotone in both
+directions: K = 30 has the lowest one-step latent error of any arm and the best movement probe, and
+scores 36.9 where K = 5 scores 65.1. Two earlier results become one pattern — this is the same
+dissociation as the attached H-JEPA level 2, reached by a different route. Note also that the H > K
+"penalty" this sweep was built to test does not exist: K = 5 scores +65.1 / +62.0 / +62.0 / +60.3 at
+H = 5 / 10 / 20 / 30, flat rather than falling.
+
+**The value head is not the channel — my hypothesis, and it was wrong.** `q_imagined` supervises Q on
+`z_hat[0..K-1]`, so a long-K arm trains its value head mostly on deep imagined latents. `loss.q_imagined_depth`
+caps that independently of K; the prediction was that K = 20 + `qd5` would restore H = 1 toward +40. It
+went +21.63 → +22.57, inside a seed spread. The cap is not inert (H = 5 gains 6 points) but the row
+maximum is unchanged, and the dissociation survives it: K = 20 + `qd5` has the best d = 1 latent error
+of any arm (0.0997) and still plays 10 points below K = 5. Whatever long rollouts break, it is not
+reached through the Q-loss's depth. The reward and continuation heads are still trained at every
+imagined depth and are queried by the planner at every search level; that is the untested suspect.
+
+K costs throughput roughly linearly: 288 / 176 / 60 decisions per second at K = 5 / 10 / 30.
+
+### Can the latent space support long-range prediction at all? (`atari_jepa.delta_probe`)
+
+The sweep above leaves an asymmetric question. The dynamics are supervised on K-step unrolls and reach
+depth 100 by *iterating* a one-step map 100 times, so a failure there is an extrapolation failure of
+this training strategy — it says nothing about whether the latent space could support that range. And
+Breakout is stochastic: at long range the best any *deterministic* predictor can do is the conditional
+mean, which under a cosine metric is indistinguishable from collapse.
+
+`delta_probe` supplies the missing control. With the encoder frozen it fits a head directly on pairs
+`(x_t, x_{t+Δ})` for each Δ and compares it, at matched Δ, against the checkpoint's own iterated
+dynamics, against persistence, and against **the mean latent** — the deterministic predictor's floor.
+Scores are `1 − d/d_mean`, so 0 *is* the conditional-mean predictor. Pairs are drawn without touching
+the span between them (a test asserts zero frame reads during selection), so memory is O(1) in Δ.
+
+Δ = 1 is the calibration anchor: a directly-supervised head must at least match a dynamics model
+trained for exactly one step, or the comparison measures the head's training budget rather than the
+latent space. At 300 updates it did not; at 20k updates it does (+0.835 vs +0.770), and that is the
+budget used throughout.
+
+| Δ | K=5 iterated | K=5 direct | K=30 iterated | K=30 direct |
+|---|---|---|---|---|
+| 1 | +0.770 | **+0.835** | +0.846 | **+0.922** |
+| 5 | +0.663 | +0.618 | +0.692 | **+0.771** |
+| 10 | +0.478 | +0.445 | +0.599 | **+0.649** |
+| 30 | +0.039 | +0.121 | **+0.462** | +0.315 |
+| 100 | −0.159 | −0.068 | **+0.083** | +0.023 |
+| 300 | −0.165 | −0.113 | −0.143 | −0.099 |
+
+* **Direct supervision does not rescue long range.** At Δ = 100 the direct head — trained on exactly
+  those pairs, on the same frozen latents — scores −0.068, i.e. worse than a constant. The long-range
+  ceiling is *not* mainly a training-coverage problem, so a Δt-conditioned model or a latent ODE would
+  meet the same wall. Breaking it needs a **distributional** model, not a better integrator.
+* **Longer rollouts do buy real time-domain generalization.** At Δ = 30, K = 30 scores +0.462 against
+  K = 5's +0.039, and at Δ = 100 it is the only arm still above the mean. The model genuinely improves;
+  it is control that does not follow.
+* **The persistence column shows the mechanism.** At Δ = 1, persistence scores −0.067 for K = 5 but
+  **+0.609** for K = 30: consecutive latents are nearly orthogonal under the `delta` target, and barely
+  move under long-rollout training. Long-horizon prediction pressure produces temporally smooth,
+  slowly-varying features — the same thing that made the attached H-JEPA encoder action-blind. Across
+  three experiments now, predicting further ahead buys prediction quality by slowing the
+  representation, and slow representations play worse.
+
+Caveat: the direct head is deliberately handicapped (an action *summary* over the span, not the
+sequence, since conditioning a jump on the full sequence is what the H-JEPA macro model failed at) and
+is one `Dynamics`-sized block. Capacity is an unlikely explanation for failing to beat a constant, but
+it is not excluded.
+
+Two horizons land in the same place, which may or may not mean anything: prediction dies at Δ ≈ 100,
+and the discount's effective horizon is 1/(1 − γ) = 100 decisions.
+
+### Suggested next experiments (from the observed failures)
 
 ### Suggested next experiments (from the observed failures)
 

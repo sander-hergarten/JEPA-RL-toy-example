@@ -195,3 +195,37 @@ class MacroHead(nn.Module):
     def forward(self, z: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
         one_hot = F.one_hot(actions, self.num_actions).flatten(1).to(z.dtype)
         return self.net(torch.cat([z.flatten(1), one_hot], dim=1)).squeeze(-1)
+
+
+class JumpHead(nn.Module):
+    """Predict the latent some fixed distance ahead in one shot, optionally conditioned on a summary.
+
+    Same residual shape as ``Dynamics``, but the conditioning vector is a dense summary of the span
+    (e.g. normalized action counts) rather than one action embedding, and ``summary_dim=0`` gives an
+    unconditioned model -- "where does this state go next under the behaviour policy". Used by
+    ``atari_jepa.delta_probe`` to ask what a directly-supervised jump can reach that an iterated
+    one-step rollout cannot.
+    """
+
+    def __init__(self, latent_shape: tuple[int, int, int], summary_dim: int, cfg: NetworkConfig):
+        super().__init__()
+        channels = latent_shape[0]
+        self.summary_dim = summary_dim
+        self.compute_dtype = _DTYPES[cfg.conv_dtype]
+        self.conv_in = nn.Conv2d(channels + summary_dim, channels, 3, padding=1)
+        self.blocks = nn.Sequential(*[ResidualBlock(channels) for _ in range(cfg.dynamics_blocks)])
+        self.conv_out = nn.Conv2d(channels, channels, 3, padding=1)
+        self.norm = nn.LayerNorm(latent_shape)
+
+    def forward(self, z: torch.Tensor, summary: torch.Tensor | None = None) -> torch.Tensor:
+        if self.summary_dim:
+            if summary is None:
+                raise ValueError("this JumpHead was built with a summary_dim and needs a summary")
+            cond = summary[:, :, None, None].expand(-1, -1, *z.shape[2:]).to(z.dtype)
+            h_in = torch.cat([z, cond], dim=1)
+        else:
+            h_in = z
+        with conv_autocast(z, self.compute_dtype):
+            h = F.relu(self.conv_in(h_in))
+            delta = self.conv_out(self.blocks(h))
+        return self.norm(z + delta.float())
