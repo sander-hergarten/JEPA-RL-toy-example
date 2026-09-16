@@ -344,6 +344,31 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
         total = total + cfg.lambda_continue * l_cont
         metrics["loss_continue"] = l_cont
 
+    if cfg.successor:
+        # psi(z_t, a_t) = phi(z_{t+1}) + gamma * (not terminated) * psi_bar(z_{t+1}, a'), with a' the
+        # online-greedy action (Double-DQN style selection, EMA evaluation). The horizon comes from the
+        # bootstrap, so nothing is unrolled here: only step 0 of the window is used.
+        z_root = z0.detach() if cfg.sf_detach else z0
+        with torch.no_grad():
+            phi_next = model.phi(target_z[:, 0])
+            greedy_next = online_next_q[:, 0].argmax(dim=-1)
+            psi_next = model.target_successor_head(target_z[:, 0], greedy_next)
+            sf_target = (1.0 - cfg.gamma) * phi_next + cfg.gamma * (~terminated[:, 0]).float().unsqueeze(1) * psi_next
+        psi = model.successor_head(z_root, actions[:, 0])
+        sf_err = F.smooth_l1_loss(psi, sf_target, reduction="none").mean(dim=1)
+        l_sf = masked_mean(sf_err, valid[:, 0])
+        # w is fit against the reward actually collected, so Q_sf = w . psi is on the reward scale.
+        pred_r = model.reward_weights(phi_next).squeeze(-1)
+        l_sf_reward = masked_mean((pred_r - rewards[:, 0]) ** 2, valid[:, 0])
+        total = total + cfg.lambda_sf * l_sf + cfg.lambda_sf_reward * l_sf_reward
+        metrics["loss_sf"] = l_sf
+        metrics["loss_sf_reward"] = l_sf_reward
+        with torch.no_grad():
+            metrics["sf_psi_norm"] = psi.norm(dim=1).mean()
+            metrics["sf_target_norm"] = sf_target.norm(dim=1).mean()
+            metrics["sf_q_mean"] = masked_mean(
+                model.reward_weights(psi).squeeze(-1) / (1.0 - cfg.gamma), valid[:, 0])
+
     if cfg.inverse != "none":
         if inverse_real:
             z_real = torch.cat([z0.unsqueeze(1), online_next_z], dim=1)  # f(x_0) .. f(x_K)

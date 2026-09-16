@@ -10,8 +10,8 @@ import torch
 from torch import nn
 
 from .config import Config
-from .networks import (ContinuationHead, Dynamics, Encoder, InverseDynamicsHead, MacroDynamics, MacroHead,
-                       QHead, RewardHead)
+from .networks import (ContinuationHead, Dynamics, Encoder, FeatureProjection, InverseDynamicsHead,
+                       MacroDynamics, MacroHead, QHead, RewardHead, SuccessorHead)
 
 
 class WorldModel(nn.Module):
@@ -42,12 +42,40 @@ class WorldModel(nn.Module):
         self.macro_dynamics = MacroDynamics(self.latent_shape, num_actions, h, net) if cfg.loss.hierarchical else None
         self.macro_return = MacroHead(latent_dim, num_actions, h, net.macro_hidden) if cfg.loss.hierarchical else None
         self.macro_continuation = MacroHead(latent_dim, num_actions, h, net.macro_hidden) if cfg.loss.hierarchical else None
+        # Successor features. phi is a frozen random basis (see FeatureProjection); reward_weights is
+        # the linear map w with r ~ w . phi(z'), so Q_sf(z, a) = w . psi(z, a) needs no rollout.
+        self.phi = FeatureProjection(latent_dim, net.sf_dim, net.sf_seed) if cfg.loss.successor else None
+        self.successor_head = (
+            SuccessorHead(latent_dim, num_actions, net.successor_hidden, net.sf_dim) if cfg.loss.successor else None
+        )
+        self.reward_weights = nn.Linear(net.sf_dim, 1, bias=False) if cfg.loss.successor else None
+        # psi carries the (1 - gamma) factor from the discounted-occupancy definition, so it stays on
+        # phi's scale instead of growing like 1/(1 - gamma) (~100x here). Undone in q_from_successor,
+        # which must return a value on the return scale for the planner to add it to a reward.
+        self.sf_gamma = cfg.loss.gamma
         self.target_encoder = copy.deepcopy(self.encoder)
         self.target_q_head = copy.deepcopy(self.q_head)
+        if self.successor_head is not None:
+            self.target_successor_head = copy.deepcopy(self.successor_head)
         for p in self.target_parameters():
             p.requires_grad_(False)
 
     TARGET_PAIRS = (("target_encoder", "encoder"), ("target_q_head", "q_head"))
+
+    @property
+    def target_pairs(self) -> tuple[tuple[str, str], ...]:
+        """TARGET_PAIRS plus the successor head when it exists (checkpoints without it are unchanged)."""
+        if self.successor_head is None:
+            return self.TARGET_PAIRS
+        return self.TARGET_PAIRS + (("target_successor_head", "successor_head"),)
+
+    def q_from_successor(self, z: torch.Tensor) -> torch.Tensor:
+        """Q(z, a) = w . psi(z, a) / (1 - gamma), on the return scale; ``[B, ...] -> [B, A]``."""
+        B = z.shape[0]
+        zr = z.repeat_interleave(self.num_actions, dim=0)
+        acts = torch.arange(self.num_actions, device=z.device).repeat(B)
+        q = self.reward_weights(self.successor_head(zr, acts)).view(B, self.num_actions)
+        return q / (1.0 - self.sf_gamma)
 
     @property
     def online_modules(self) -> tuple[str, ...]:
@@ -56,6 +84,8 @@ class WorldModel(nn.Module):
             names += ("inverse_head",)
         if self.macro_dynamics is not None:
             names += ("macro_dynamics", "macro_return", "macro_continuation")
+        if self.successor_head is not None:
+            names += ("successor_head", "reward_weights")
         return names
 
     def online_parameters(self) -> list[nn.Parameter]:
@@ -72,12 +102,12 @@ class WorldModel(nn.Module):
         self.encoder.eval()
 
     def target_parameters(self) -> list[nn.Parameter]:
-        return [p for t, _ in self.TARGET_PAIRS for p in getattr(self, t).parameters()]
+        return [p for t, _ in self.target_pairs for p in getattr(self, t).parameters()]
 
     @torch.no_grad()
     def update_targets(self, tau: float) -> None:
         """target = tau * target + (1 - tau) * online, for parameters and buffers."""
-        for t_name, o_name in self.TARGET_PAIRS:
+        for t_name, o_name in self.target_pairs:
             target, online = getattr(self, t_name), getattr(self, o_name)
             t_params = [p for p in target.parameters()]
             o_params = [p for p in online.parameters()]
@@ -124,6 +154,8 @@ def trained_modules(cfg: Config) -> list[str]:
         mods.append("inverse_head")
     if cfg.loss.hierarchical:
         mods += ["macro_dynamics", "macro_return", "macro_continuation"]
+    if cfg.loss.successor:
+        mods += ["successor_head", "reward_weights"]
     return mods
 
 

@@ -229,3 +229,36 @@ class JumpHead(nn.Module):
             h = F.relu(self.conv_in(h_in))
             delta = self.conv_out(self.blocks(h))
         return self.norm(z + delta.float())
+
+
+class FeatureProjection(nn.Module):
+    """Fixed random projection of a latent to the successor-feature basis phi(z).
+
+    Deliberately not learned. Successor features regress a discounted sum of phi, so letting phi
+    follow that objective makes it circular, with phi = constant as a trivial optimum -- the same
+    collapse that the shuffled-action and rank diagnostics kept catching elsewhere in this project.
+    A frozen random basis grounds the target; the encoder still moves, so phi is read from the EMA
+    target encoder rather than the online one.
+    """
+
+    def __init__(self, latent_dim: int, out_dim: int, seed: int = 0):
+        super().__init__()
+        g = torch.Generator().manual_seed(seed)
+        weight = torch.randn(out_dim, latent_dim, generator=g) / latent_dim**0.5
+        self.register_buffer("weight", weight)
+        self.out_dim = out_dim
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        return F.linear(z.flatten(1), self.weight)
+
+
+class SuccessorHead(ActionHead):
+    """psi(z, a) ~ E[sum_k gamma^k phi(z_{t+k+1})]: the discounted future in feature space.
+
+    Trained by bootstrapping, so its horizon is unbounded without unrolling anything -- the point of
+    using it here, since every multi-step unrolling objective tried in this project bought prediction
+    quality by making the representation slower.
+    """
+
+    def __init__(self, latent_dim: int, num_actions: int, hidden: int, sf_dim: int):
+        super().__init__(latent_dim, num_actions, hidden, sf_dim)

@@ -36,11 +36,13 @@ def run_evaluation(
     max_decisions: int,
     epsilon: float = 0.0,
     horizon: int | None = None,
+    bootstrap: str | None = None,
     log=None,
 ) -> dict[str, Any]:
     env = make_env(cfg.env)
     check_compatible(env_meta, env.metadata())
-    controller = make_controller(controller_name, model, cfg, device, epsilon, seed=seed_base, horizon=horizon)
+    controller = make_controller(controller_name, model, cfg, device, epsilon, seed=seed_base,
+                                 horizon=horizon, bootstrap=bootstrap)
     stacker = FrameStacker(cfg.env.history)
     was_training = model.training
     model.eval()
@@ -89,6 +91,7 @@ def run_evaluation(
     returns = np.array([r["raw_return"] for r in records], dtype=np.float64)
     return {
         "controller": controller_name,
+        "bootstrap": bootstrap or cfg.planning.bootstrap,
         "planning_horizon": (horizon or cfg.planning.horizon) if controller_name == "lookahead" else None,
         "training_rollout_steps": cfg.replay.rollout_steps,
         "epsilon": epsilon,
@@ -110,7 +113,9 @@ def run_evaluation(
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--controller", choices=["q", "lookahead", "hierarchical", "both"], default="q")
+    p.add_argument("--controller", choices=["q", "sf", "lookahead", "hierarchical", "both"], default="q")
+    p.add_argument("--bootstrap", choices=["q", "sf"], default=None,
+                   help="value at the search leaf (default: planning.bootstrap from the checkpoint)")
     p.add_argument("--episodes", type=int, default=None, help="default: eval.episodes from the checkpoint config")
     p.add_argument("--seed-base", type=int, default=None, help="reset seed of episode i is seed_base + i")
     p.add_argument("--epsilon", type=float, default=None)
@@ -149,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
     for name in controllers:
         result = run_evaluation(
             model, cfg, ckpt["env"], device, name, episodes, seed_base, max_dec, epsilon,
-            horizon=horizon, log=print,
+            horizon=horizon, bootstrap=args.bootstrap, log=print,
         )
         result["checkpoint"] = str(args.checkpoint)
         result["variant"] = cfg.loss.variant_name()
@@ -159,6 +164,8 @@ def main(argv: list[str] | None = None) -> None:
             out = Path(args.out)
         else:
             suffix = f"_h{horizon}" if name == "lookahead" and horizon != 1 else ""
+            if (args.bootstrap or cfg.planning.bootstrap) == "sf" and name != "sf":
+                suffix += "_sfboot"
             out = Path(args.checkpoint).parent / f"eval_{name}{suffix}.json"
         write_json(out, result)
         s = result["controller_stats"]

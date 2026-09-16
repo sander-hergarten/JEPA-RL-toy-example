@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--panel", action="append", nargs=3, metavar=("CHECKPOINT", "CONTROLLER", "LABEL"),
                    default=[], help="repeatable: one video panel")
     p.add_argument("--checkpoint", help="single-panel shorthand")
-    p.add_argument("--controller", default="q", choices=["q", "lookahead", "hierarchical"])
+    p.add_argument("--controller", default="q", choices=["q", "sf", "lookahead", "hierarchical"])
     p.add_argument("--label", default=None)
     p.add_argument("--seed", type=int, default=10_000, help="reset seed, shared by all panels")
     p.add_argument("--epsilon", type=float, default=0.01)

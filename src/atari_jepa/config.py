@@ -67,6 +67,9 @@ class NetworkConfig:
     # The ball is the only fast small mover, so differencing removes the static background from the input.
     motion_channels: bool = False
     macro_hidden: int = 256
+    successor_hidden: int = 512
+    sf_dim: int = 256  # width of the fixed random feature basis phi the successor head regresses
+    sf_seed: int = 0  # the basis is frozen; its seed is part of the architecture, so checkpoints match
     # Compute dtype for the conv trunks (encoder and dynamics convs) via autocast. Parameters, optimizer
     # state, LayerNorm, MLP heads and all losses stay float32: latent cosine distances are ~1e-2, below
     # bfloat16's resolution near 1.0 (~4e-3), so loss math must not run in bfloat16.
@@ -111,6 +114,16 @@ class LossConfig:
     # Train level 2 on detached level-1 latents. Without this, the jumpy objective pulls the shared
     # encoder toward slowly-varying (action-insensitive) features and destroys level-1 planning.
     macro_detach: bool = True
+    # Successor features: psi(z, a) = E[sum_k gamma^k phi(z_{t+k+1})] over a frozen random basis phi,
+    # trained by bootstrapping rather than unrolling. Gives an unbounded value horizon with the same
+    # gradient signature as one-step TD -- the one long-horizon mechanism here that has never made the
+    # representation slower. With a learned reward map w, Q_sf(z, a) = w . psi(z, a).
+    successor: bool = False
+    lambda_sf: float = 1.0
+    lambda_sf_reward: float = 1.0
+    # Train psi on detached latents. Attached, psi becomes a representation objective competing with
+    # the JEPA one, and a constant phi is a trivial optimum of it; see macro_detach for the precedent.
+    sf_detach: bool = True
     lambda_q: float = 1.0
     lambda_jepa: float = 1.0
     lambda_reward: float = 1.0
@@ -136,6 +149,8 @@ class LossConfig:
             raise ValueError(f"loss.macro_horizon must be >= 2, got {self.macro_horizon}")
         if self.q_imagined_depth < 0:
             raise ValueError(f"loss.q_imagined_depth must be >= 0 (0 = all K), got {self.q_imagined_depth}")
+        if self.successor and self.lambda_sf <= 0:
+            raise ValueError(f"loss.successor needs lambda_sf > 0, got {self.lambda_sf}")
         if self.jepa_target not in ("absolute", "batch_centered", "delta"):
             raise ValueError(
                 f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
@@ -155,6 +170,8 @@ class LossConfig:
             suffix += f"+jepa_{self.jepa_target}"
         if self.q_imagined and self.q_imagined_depth:
             suffix += f"+qdepth{self.q_imagined_depth}"
+        if self.successor:
+            suffix += "+sf" if self.sf_detach else "+sf_attached"
         if self.q_imagined and self.jepa and self.reward and self.continuation:
             return "C_world_model" + suffix
         if self.jepa and not (self.reward or self.continuation or self.q_imagined):
@@ -255,6 +272,13 @@ class PlanningConfig:
     beam_width: int = 16
     # Hierarchical planner: candidate action sequences scored with the level-2 jumpy model.
     macro_candidates: int = 128
+    # Value used at a search leaf: "q" (the Q head) or "sf" (w . psi, the successor value, whose
+    # horizon is unbounded because it is bootstrapped rather than unrolled).
+    bootstrap: str = "q"
+
+    def __post_init__(self) -> None:
+        if self.bootstrap not in ("q", "sf"):
+            raise ValueError(f"planning.bootstrap must be 'q' or 'sf', got {self.bootstrap!r}")
 
 
 @dataclass
