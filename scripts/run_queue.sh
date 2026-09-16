@@ -6,4 +6,6 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/run_wave15.sh      # successor features: a bootstrapped, unbounded value horizon
 scripts/run_wave16.sh      # Legendre Memory Unit in place of the memoryless dynamics core
+scripts/run_wave17.sh      # rollout-length sweep on the LMU, against the conv K sweep
+scripts/run_wave18.sh      # the same sweep with an offline encoder, frozen and fine-tuned
 echo "QUEUE_COMPLETE"

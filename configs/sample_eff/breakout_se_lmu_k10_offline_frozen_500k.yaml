@@ -1,0 +1,73 @@
+# Offline "learn by observing" + LMU dynamics, at rollout length K=10.
+#
+# The encoder is pretrained offline (MSE + SIGReg, delta target + motion channels) on frames from a
+# trained model-free agent, then RL re-attaches with the encoder held fixed. Together with the live
+# arm (breakout_se_lmu_k10_500k) this separates two things the conv K sweep confounded: whether long
+# rollouts hurt because they reshape the *encoder*, or for some other reason. A frozen encoder cannot
+# be reshaped by K at all, so if the degradation survives freezing it is not an encoder effect.
+#
+# Note the pretrain used a conv dynamics, so only the encoder transfers; the LMU dynamics starts fresh
+# and says so in the run log. All K arms share this one offline encoder, so K remains the only thing
+# varying across the sweep.
+name: breakout_se_lmu_k10_offline_frozen_500k
+seed: 0
+device: auto
+network:
+  motion_channels: true
+  dynamics_kind: lmu
+  lmu_order: 8
+  lmu_theta: 10.0       # window = K, so the memory spans exactly the training rollout
+  lmu_signals: 32
+  lmu_context: 32
+env:
+  id: ALE/Breakout-v5
+  sticky_action_prob: 0.25      # primary experiment: explicit
+  frame_skip: 1
+  action_repeat: 4
+  screen_size: 84
+  history: 4
+  noop_max: 30
+  fire_on_reset: true           # Breakout needs FIRE to launch the ball
+  fire_on_life_loss: true       # and a new serve after each lost life; see README
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+  jepa_target: delta
+  n_step: 5
+  lambda_q: 1.0
+  lambda_jepa: 1.0
+  lambda_reward: 1.0
+  lambda_continue: 1.0
+  lambda_var: 1.0
+  gamma: 0.99
+  variance_floor: 0.1
+replay:
+  capacity: 100000
+  rollout_steps: 10
+  save_with_checkpoint: true
+optim:
+  batch_size: 32
+  lr: 1.0e-4
+  grad_clip_norm: 10.0
+  tau: 0.99
+train:
+  init_from: runs/pretrain_breakout_delta_motion/checkpoint.pt
+  freeze_encoder: true
+  total_decisions: 500000
+  warmup_decisions: 5000
+  update_every: 4
+  eps_start: 1.0
+  eps_end: 0.1
+  eps_decay_decisions: 50000
+  checkpoint_every_decisions: 100000
+  eval_every_decisions: 100000
+  eval_episodes: 3
+  eval_max_episode_decisions: 10000
+  eval_controllers: [q, lookahead]
+eval:
+  episodes: 10
+  seed_base: 10000
+  epsilon: 0.0

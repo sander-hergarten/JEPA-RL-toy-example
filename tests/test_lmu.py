@@ -134,3 +134,45 @@ def test_dynamics_kind_is_validated():
         NetworkConfig(dynamics_kind="legendre")
     with pytest.raises(ValueError, match="lmu_theta"):
         NetworkConfig(dynamics_kind="lmu", lmu_theta=0.0)
+
+
+def test_a_conv_pretrain_transfers_its_encoder_into_an_lmu_run_and_skips_the_dynamics(tmp_path, capsys):
+    """The offline arms pretrain a conv model; an LMU run must still inherit the *encoder* rather than
+    refusing to start, and must say that its dynamics began fresh."""
+    from test_checkpoint import tiny_config
+
+    from atari_jepa.train import Trainer
+
+    pre_cfg = tiny_config(tmp_path / "pre")
+    torch.manual_seed(0)
+    source = Trainer(pre_cfg, tmp_path / "pre", torch.device("cpu"))
+    # Mark every source tensor so a transfer is unmistakable: both models seed their submodules the
+    # same way, so an untouched tensor can otherwise equal the source by coincidence.
+    with torch.no_grad():
+        for prm in source.model.parameters():
+            prm.add_(7.0)
+    source.save()
+    pretrained = source.model
+
+    run = tmp_path / "lmu"
+    cfg = tiny_config(run)
+    cfg.network.dynamics_kind = "lmu"
+    cfg.train.init_from = str(tmp_path / "pre" / "checkpoint.pt")
+    trainer = Trainer(cfg, run, torch.device("cpu"))
+    out = capsys.readouterr().out
+    assert "skipped" in out and "dynamics" in out
+
+    assert "encoder" in out and "leaving dynamics" in out
+
+    # The whole dynamics module stays fresh, not just the mismatched tensor: a partly-inherited module
+    # would differ from the live arm in a way no config records.
+    loaded = dict(trainer.model.dynamics.named_parameters())
+    shared = [n for n, pre in pretrained.dynamics.named_parameters()
+              if n in loaded and loaded[n].shape == pre.shape]
+    assert shared, "no shared-shape dynamics tensor to check; the test would be vacuous"
+    for name, pre in pretrained.dynamics.named_parameters():
+        if name in loaded and loaded[name].shape == pre.shape:
+            assert not torch.equal(loaded[name], pre), f"{name} came from a mismatched dynamics"
+
+    assert isinstance(trainer.model.dynamics, LMUDynamics)
+    assert trainer.model.dynamics.conv_in.weight.shape != pretrained.dynamics.conv_in.weight.shape

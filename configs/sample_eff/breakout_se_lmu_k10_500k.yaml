@@ -1,0 +1,67 @@
+# Legendre Memory Unit dynamics on the old rollout strategy. Identical to breakout_se_nstep_500k in
+# every other field: same K=5 unroll, same losses, same budget -- only the dynamics core changes.
+#
+# The current core is memoryless: g(z, a) sees the latent and nothing about how the rollout reached it.
+# An LMU threads a state whose fixed Legendre Delay Network matrices hold an orthogonal representation
+# of the rollout history over a window of lmu_theta steps, so step k is conditioned on steps < k. The
+# basis is derived, not learned, which is what distinguishes this from just adding a recurrent layer.
+name: breakout_se_lmu_k10_500k
+seed: 0
+device: auto
+network:
+  motion_channels: true
+  dynamics_kind: lmu
+  lmu_order: 8
+  lmu_theta: 10.0       # window = K, so the memory spans exactly the training rollout
+  lmu_signals: 32
+  lmu_context: 32
+env:
+  id: ALE/Breakout-v5
+  sticky_action_prob: 0.25      # primary experiment: explicit
+  frame_skip: 1
+  action_repeat: 4
+  screen_size: 84
+  history: 4
+  noop_max: 30
+  fire_on_reset: true           # Breakout needs FIRE to launch the ball
+  fire_on_life_loss: true       # and a new serve after each lost life; see README
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+  jepa_target: delta
+  n_step: 5
+  lambda_q: 1.0
+  lambda_jepa: 1.0
+  lambda_reward: 1.0
+  lambda_continue: 1.0
+  lambda_var: 1.0
+  gamma: 0.99
+  variance_floor: 0.1
+replay:
+  capacity: 100000
+  rollout_steps: 10
+  save_with_checkpoint: true
+optim:
+  batch_size: 32
+  lr: 1.0e-4
+  grad_clip_norm: 10.0
+  tau: 0.99
+train:
+  total_decisions: 500000
+  warmup_decisions: 5000
+  update_every: 4
+  eps_start: 1.0
+  eps_end: 0.1
+  eps_decay_decisions: 50000
+  checkpoint_every_decisions: 100000
+  eval_every_decisions: 100000
+  eval_episodes: 3
+  eval_max_episode_decisions: 10000
+  eval_controllers: [q, lookahead]
+eval:
+  episodes: 10
+  seed_base: 10000
+  epsilon: 0.0

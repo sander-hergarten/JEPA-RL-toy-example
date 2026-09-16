@@ -94,20 +94,38 @@ class Trainer:
             self._restore(resume)
 
     def _init_from_pretrained(self, path: str) -> None:
-        """Load encoder/dynamics (and their EMA targets) from an offline pretraining checkpoint."""
+        """Load encoder/dynamics (and their EMA targets) from an offline pretraining checkpoint.
+
+        Tensors whose shape does not match this model are skipped rather than failing the run: the
+        pretraining always produces a usable *encoder*, but the dynamics core downstream may be a
+        different architecture (a conv pretrain feeding an LMU run, say). What was skipped is printed,
+        because "the encoder was pretrained but the dynamics started fresh" changes how a result reads.
+        """
         ckpt = load_checkpoint(path, self.device)
         check_compatible(ckpt["env"], self.env_meta)
         state = ckpt["model"]
         wanted = tuple(f"{m}." for m in ("encoder", "dynamics", "target_encoder"))
-        transferred = {k: v for k, v in state.items() if k.startswith(wanted)}
-        missing = self.model.load_state_dict(transferred, strict=False)
-        unexpected = [k for k in missing.unexpected_keys]
+        own = self.model.state_dict()
+        candidates = {k: v for k, v in state.items() if k.startswith(wanted)}
+        unexpected = sorted(k for k in candidates if k not in own)
         if unexpected:
             raise ValueError(f"pretrained checkpoint has unexpected parameters: {unexpected[:5]}")
+        # Drop a module whole if any of its tensors mismatches. A partial transfer is worse than
+        # either extreme: inherited residual blocks would expect features from an input layer that no
+        # longer exists, and the arm would differ from its live counterpart in an unstated way.
+        bad_modules = {k.split(".", 1)[0] for k, v in candidates.items() if own[k].shape != v.shape}
+        transferred = {k: v for k, v in candidates.items() if k.split(".", 1)[0] not in bad_modules}
+        skipped = sorted(set(candidates) - set(transferred))
+        self.model.load_state_dict(transferred, strict=False)
+        modules = sorted({k.split(".", 1)[0] for k in transferred})
+        note = ""
+        if skipped:
+            note = (f"; skipped {len(skipped)} tensors, leaving "
+                    f"{', '.join(sorted(bad_modules))} at its fresh initialization")
         # printed directly: this runs during __init__, before the counters _log reads exist
-        print(f"[{self.cfg.name} s{self.cfg.seed}] initialized encoder+dynamics from {path} "
+        print(f"[{self.cfg.name} s{self.cfg.seed}] initialized {'+'.join(modules)} from {path} "
               f"({ckpt.get('variant', 'unknown')}, {len(transferred)} tensors, "
-              f"frozen={self.cfg.train.freeze_encoder})", flush=True)
+              f"frozen={self.cfg.train.freeze_encoder}){note}", flush=True)
 
     # --------------------------------------------------------------------------------- persistence
     def _restore(self, ckpt: dict[str, Any]) -> None:
