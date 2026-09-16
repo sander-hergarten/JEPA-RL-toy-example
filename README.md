@@ -447,6 +447,7 @@ diagnostic failure in the previous one. In short:
 | 9 | Sample-efficiency matrix at a fixed 500k budget, then follow-ups | **n-step is worth ~3× the samples** (any n ≥ 3); the replay-ratio failure was the *buffer size*, and n-step + rr 0.5 + a 300k buffer gives **+47.9 at 500k**; planner-driven collection hurts even when switched in late |
 | 10 | 2.5M with n-step | **+70.9 with lookahead**, 3.8× model-free |
 | 11 | Planning depth sweep on the 2.5M n-step checkpoints | Depth pays up to the training rollout horizon: **+91.7 at H = 5**, then *down* to +85.3 at H = 10 |
+| 12 | H-JEPA level 2 (jumpy dynamics) vs. multi-step search, 500k | Joint training makes the encoder **action-blind** (shuffled-action penalty 48% → 2%) and costs everything; detached it is harmless but its jumpy planner (+29.2) still loses to beam search over level 1 (+57.3) |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -1060,6 +1061,57 @@ depth, so the extra depth is not changing *how often* it disagrees, only *how we
 `videos/n5_2p5m_h10_seed10001.mp4` shows H = 10 next to the same checkpoint's Q policy (+95 vs +28 on
 that reset seed, close to both arms' 10-episode means).
 
+### Hierarchy (H-JEPA level 2) against multi-step search (500k, Breakout)
+
+Multi-step search costs H unrolls of the one-step model per candidate. The standard answer is temporal
+abstraction: a *level 2* that predicts H steps ahead in one shot, conditioned on the whole action
+sequence, so a candidate sequence is scored with one forward pass. `MacroDynamics` does that
+(`loss.hierarchical`, `macro_horizon: 5`), with `MacroHead` predicting the discounted return collected
+inside the window and whether the episode survives it; `HierarchicalController` scores candidate
+sequences and executes the first action, replanning every step.
+
+All arms are the n-step delta+motion recipe at 500k decisions, ε = 0.01; the configs differ *only* in
+the `loss.hierarchical` block. The flat and detached arms have 6 seeds, the attached arm 3:
+
+| Arm | Q-policy | Flat H = 1 | Flat H = 5 | Hierarchical planner |
+|---|---|---|---|---|
+| flat n-step (no level 2) | +22.13 ± 3.68 | +39.17 ± 3.90 | **+60.62 ± 6.90** | – |
+| level 2, gradients **detached** | +22.05 ± 2.39 | +40.37 ± 6.96 | +57.33 ± 9.48 | +29.17 ± 3.26 |
+| level 2, gradients **attached** | +13.03 ± 4.29 | +3.73 ± 0.66 | +4.63 ± 1.04 | +2.97 ± 0.73 |
+
+**Attaching level 2 to the encoder destroys level 1.** Every loss improved when level 2 was trained
+jointly — level-1 JEPA 0.242 → 0.228, reward CE 0.021 → 0.007 — while the agent became unable to play
+at all (+4.6 with the search that gets +60.6 without the hierarchy). The diagnostics say why:
+
+| | flat | detached | attached |
+|---|---|---|---|
+| next-latent distance between actions | 0.0661 | 0.0686 | **0.0008** |
+| shuffled-action penalty, depth 5 | 48% | 51% | **2%** |
+| movement probe, balanced accuracy | 0.580 | 0.598 | **0.493** |
+
+Pulling the encoder toward features that survive a 5-step jump is pressure toward features that do not
+change, and an action-invariant representation is the optimum of that objective. The movement probe is
+at its majority-class baseline (0.49): the attached encoder's latents no longer encode which way
+anything is moving. This is the same failure as the original cosine objective in experiment 1, reached
+by a different route, and again the *losses* all looked better while it happened.
+
+`loss.macro_detach` (default `true`) stops the level-2 loss at `z0.detach()`, so it reaches only
+`macro_dynamics` and the macro heads. A parametrized test asserts the encoder gradient is exactly zero
+when detached and nonzero when attached. With it, level 1 is fully preserved (columns 1 and 2 above are
+indistinguishable) — and the hierarchy then neither helps nor hurts the flat controllers.
+
+**But the jumpy planner is still much worse than unrolling.** On the same healthy checkpoints, the
+hierarchical controller gets **+29.2** where 5-step beam search over level 1 gets **+57.3**. One forward
+pass per candidate is ~5× cheaper and buys a substantially worse decision: level 2 has to represent the
+effect of every action *sequence* in a single jump, while beam search re-grounds at each level and
+prunes. For this problem, depth is better bought by searching than by abstraction.
+
+*A correction worth recording.* At 3 seeds the detached arm looked 15 points *worse* than flat at H = 5
+(+50.1 vs +65.1), which I could not explain — the detach is provably gradient-isolated and the level-1
+diagnostics matched. Three more seeds per arm closed it (+57.3 vs +60.6, overlapping spreads): the
+first three flat seeds happened to be both high and unusually tight (66.3 / 63.7 / 65.2, ±1.07), and
+3 seeds underestimated the spread badly. The 6-seed spreads are ±6.9 and ±9.5.
+
 ### Latent space quality (Pong A/B/C, 500k checkpoints, 3 seeds each, 6,000 held-out roots per run)
 
 Averages over seeds, from `results/pong_{q,temporal_jepa,world_model}_500k/seed*/embeddings.json`
@@ -1096,6 +1148,22 @@ worst, which fits the picture of a representation optimized for predictability o
 For these A/B/C checkpoints the weakest variable is the ball's **horizontal** position (R² 0.36–0.56,
 versus 0.85+ for vertical); the delta+motion runs later reach 0.85 on it. In Pong, x is what determines *when* the ball arrives, and it moves fastest, so it is exactly
 what a smoothness-rewarding objective discards first.
+
+### In flight: does a longer training rollout buy usable planning depth? (K sweep, 500k)
+
+The depth sweep above stops gaining exactly at H = 5, which is `replay.rollout_steps` — the horizon the
+dynamics are unrolled and supervised over. That is suggestive, not established: the ceiling could be
+set by K, or by anything else that happens to sit near 5 steps (the ball's travel time between paddle
+contacts, the reward horizon, accumulated one-step error). `configs/sample_eff/breakout_se_k{10,20,30}_500k.yaml`
+are identical to `breakout_se_nstep_500k` except for K, and every resulting checkpoint is scored at
+H = 1, 3, 5, 10, 20, 30 (`scripts/run_wave13.sh`, 3 seeds each). If the ceiling tracks K, longer
+rollouts buy depth; if it stays near 5, K is not what sets it.
+
+Two things to keep in mind when reading that table. K also lengthens the *imagined-Q* supervision
+(`q_imagined` trains Q on `z_hat[0..K-1]`), so a K = 30 arm trains its Q head on depth-30 imagined
+latents — this is "longer rollout" as a whole recipe, not a JEPA-only manipulation. And K costs
+throughput roughly linearly: measured 288 / 176 / 60 decisions per second at K = 5 / 10 / 30, so a
+K = 30 run is ~2.3 h against ~0.5 h for the control.
 
 ### Suggested next experiments (from the observed failures)
 
