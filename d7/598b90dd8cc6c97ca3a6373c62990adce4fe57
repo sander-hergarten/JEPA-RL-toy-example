@@ -1,0 +1,29 @@
+README.md
+  s_85dbbd14b9a3a7::t_934f311484b870 450,1064-1114,1152-1167
+configs/sample_eff/breakout_se_k10_500k.yaml
+  s_85dbbd14b9a3a7::t_74a6347d2d8d1f 1-63
+configs/sample_eff/breakout_se_k20_500k.yaml
+  s_85dbbd14b9a3a7::t_fda8af98754266 1-63
+configs/sample_eff/breakout_se_k30_500k.yaml
+  s_85dbbd14b9a3a7::t_ed5ad52dccddfe 1-63
+scripts/run_wave12.sh
+  s_85dbbd14b9a3a7::t_bd9e70384f2ab5 1-31
+scripts/run_wave13.sh
+  s_85dbbd14b9a3a7::t_d037776183cce0 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d7598b90dd8cc6c97ca3a6373c62990adce4fe57",
+  "prompts": {},
+  "sessions": {
+    "s_85dbbd14b9a3a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_85dbbd14b9a3a7",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
