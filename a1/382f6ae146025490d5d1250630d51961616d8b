@@ -1,0 +1,25 @@
+README.md
+  s_e97793fdac858b::t_f9abdf1ca3cfdf 118-121,453,455-456,1058-1067,1162-1255
+src/atari_jepa/delta_probe.py
+  s_e97793fdac858b::t_d329076648e690 1-245
+src/atari_jepa/networks.py
+  s_e97793fdac858b::t_0222695d0b0e18 198-231
+tests/test_delta_probe.py
+  s_e97793fdac858b::t_065e7bca7ac665 1-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1382f6ae146025490d5d1250630d51961616d8b",
+  "prompts": {},
+  "sessions": {
+    "s_e97793fdac858b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e97793fdac858b",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
