@@ -1,0 +1,37 @@
+configs/sample_eff/breakout_se_sf_500k.yaml
+  s_aa4172d7f3be14::t_f2cd8b65f2d140 1-66
+scripts/run_wave15.sh
+  s_aa4172d7f3be14::t_8bbc521d3cb38d 1-45
+src/atari_jepa/agent.py
+  s_aa4172d7f3be14::t_82297b37d02105 13-14,45-55,58-59,65-79,87-88,105,110,157-158
+src/atari_jepa/config.py
+  s_aa4172d7f3be14::t_c461a2074e8f14 70-72,117-126,152-153,173-174,275-281
+src/atari_jepa/evaluate.py
+  s_aa4172d7f3be14::t_6d43f05f009bec 39,44-45,94,116-118,157,167-168
+src/atari_jepa/losses.py
+  s_aa4172d7f3be14::t_b2961878b313bd 347-371
+src/atari_jepa/networks.py
+  s_aa4172d7f3be14::t_de841fda2dcfbc 232-264
+src/atari_jepa/planning.py
+  s_aa4172d7f3be14::t_b3b0384f001a1d 21-30,32,40,45-46,72,94,163-164,169,174,176,180-189,207-211,218-221,231,233
+src/atari_jepa/record.py
+  s_aa4172d7f3be14::t_e7998615fe472b 122
+tests/test_successor.py
+  s_aa4172d7f3be14::t_f55bb25656b061 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e0d34ffa5fc84aa9eb45e8330c22d824766c891",
+  "prompts": {},
+  "sessions": {
+    "s_aa4172d7f3be14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_aa4172d7f3be14",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
