@@ -202,6 +202,28 @@ class AtariEnv:
         """Emulator RAM (128 bytes). Evaluation-only: never an input to the agent or its training."""
         return self._ale.getRAM().astype(np.int64)
 
+    def clone_state(self) -> dict[str, Any]:
+        """Snapshot everything ``step`` reads, for counterfactual rollouts from one identical state.
+
+        ``cloneSystemState`` includes the emulator RNG, so branches that differ only in the action also
+        share the sticky-action draw: any difference between them is caused by the action and nothing
+        else. Evaluation-only, like ``state_vector``.
+        """
+        return {
+            "ale": self._ale.cloneSystemState(),
+            "screens": self._screens.copy(),
+            "lives": self._lives,
+            "episode_decisions": self._episode_decisions,
+            "total_frames": self.total_frames,
+        }
+
+    def restore_state(self, snapshot: dict[str, Any]) -> None:
+        self._ale.restoreSystemState(snapshot["ale"])
+        self._screens[:] = snapshot["screens"]
+        self._lives = snapshot["lives"]
+        self._episode_decisions = snapshot["episode_decisions"]
+        self.total_frames = snapshot["total_frames"]
+
     def metadata(self) -> dict[str, Any]:
         import ale_py
         import gymnasium as gym

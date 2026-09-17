@@ -118,3 +118,35 @@ def test_breakout_fire_on_reset_and_life_loss():
             break
     assert not terminated
     idle.close()
+
+
+@pytest.mark.skipif(not ale_available(), reason="ale-py/gymnasium not installed")
+def test_emulator_state_can_be_cloned_and_restored_for_counterfactuals():
+    """A restored state must replay identically, including the sticky-action draw: the counterfactual
+    in atari_jepa.action_effect is only about the action if everything else is held fixed."""
+    cfg = EnvConfig(id="ALE/Breakout-v5", sticky_action_prob=0.25, fire_on_reset=True,
+                    fire_on_life_loss=True)
+    env = make_env(cfg)
+    try:
+        env.reset(seed=11)
+        for _ in range(30):
+            env.step(env.num_actions - 1)
+        snapshot = env.clone_state()
+
+        # the same action from the same snapshot gives bit-identical results, twice over
+        first = [env.step(2) for _ in range(5)]
+        env.restore_state(snapshot)
+        second = [env.step(2) for _ in range(5)]
+        for (o1, r1, t1, tr1, _), (o2, r2, t2, tr2, _) in zip(first, second):
+            assert np.array_equal(o1, o2) and r1 == r2 and t1 == t2 and tr1 == tr2
+
+        # a different action from that same state does something else (the effect being measured)
+        env.restore_state(snapshot)
+        other = [env.step(3) for _ in range(5)]
+        assert any(not np.array_equal(a[0], b[0]) for a, b in zip(first, other))
+
+        # bookkeeping is restored too, not just the emulator
+        env.restore_state(snapshot)
+        assert env.total_frames == snapshot["total_frames"]
+    finally:
+        env.close()

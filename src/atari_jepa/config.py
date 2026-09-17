@@ -118,6 +118,13 @@ class LossConfig:
     # dominates the cosine). "batch_centered": latents minus the batch-mean target latent.
     # "delta": the per-step change, so only what moves is predicted.
     jepa_target: str = "absolute"
+    # How the K depth terms of the latent loss are weighted against each other. The gradient anatomy
+    # shows depth terms start to *conflict* as K grows (0% of pairs oppose at K=5 and K=10, 8.4% at
+    # K=30, mean pairwise alignment +0.48 -> +0.28), and a slowly-varying feature is the compromise
+    # they all agree on -- which is what control cannot use. "inverse" (1/(k+1)) and "discount"
+    # (jepa_depth_gamma^k) tilt the sum back toward the shallow terms that still carry the action.
+    jepa_depth_weight: str = "uniform"
+    jepa_depth_gamma: float = 0.9
     # H-JEPA level 2: a jumpy dynamics that predicts `macro_horizon` steps ahead in one shot, with its
     # own macro-return and macro-continuation heads. Enables planning over action sequences without
     # unrolling the one-step model.
@@ -164,6 +171,11 @@ class LossConfig:
             raise ValueError(f"loss.q_imagined_depth must be >= 0 (0 = all K), got {self.q_imagined_depth}")
         if self.successor and self.lambda_sf <= 0:
             raise ValueError(f"loss.successor needs lambda_sf > 0, got {self.lambda_sf}")
+        if self.jepa_depth_weight not in ("uniform", "inverse", "discount"):
+            raise ValueError(
+                f"loss.jepa_depth_weight must be uniform, inverse or discount, got {self.jepa_depth_weight!r}")
+        if not 0.0 < self.jepa_depth_gamma <= 1.0:
+            raise ValueError(f"loss.jepa_depth_gamma must be in (0, 1], got {self.jepa_depth_gamma}")
         if self.jepa_target not in ("absolute", "batch_centered", "delta"):
             raise ValueError(
                 f"loss.jepa_target must be absolute, batch_centered or delta, got {self.jepa_target!r}")
@@ -181,6 +193,8 @@ class LossConfig:
         suffix = "" if self.inverse == "none" else f"+inverse_{self.inverse}"
         if self.jepa and self.jepa_target != "absolute":
             suffix += f"+jepa_{self.jepa_target}"
+        if self.jepa and self.jepa_depth_weight != "uniform":
+            suffix += f"+depth_{self.jepa_depth_weight}"
         if self.q_imagined and self.q_imagined_depth:
             suffix += f"+qdepth{self.q_imagined_depth}"
         if self.successor:

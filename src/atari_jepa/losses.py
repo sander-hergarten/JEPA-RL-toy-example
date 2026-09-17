@@ -232,6 +232,25 @@ def n_step_targets(rewards: torch.Tensor, terminated: torch.Tensor, valid: torch
     return torch.stack(out, dim=1)
 
 
+def depth_weights(K: int, mode: str, gamma: float, device, dtype) -> torch.Tensor:
+    """Per-depth weights for the latent loss, normalized to mean 1 so the loss keeps its scale.
+
+    Uniform weighting treats a K-step rollout as K equally important tasks. They are not independent:
+    past K ~= 20 they begin to pull the shared encoder in opposing directions, and the feature they all
+    agree on is one that barely changes -- predictable at every depth, and useless for control.
+    """
+    k = torch.arange(K, device=device, dtype=dtype)
+    if mode == "uniform":
+        w = torch.ones_like(k)
+    elif mode == "inverse":
+        w = 1.0 / (k + 1.0)
+    elif mode == "discount":
+        w = gamma**k
+    else:
+        raise ValueError(f"unknown depth weighting {mode!r}")
+    return w / w.mean()
+
+
 def dynamics_step(dynamics, z: torch.Tensor, action: torch.Tensor, state):
     """``(z', state')`` from a dynamics core. Anything without a ``step`` method is memoryless."""
     step = getattr(dynamics, "step", None)
@@ -327,7 +346,8 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
 
     if cfg.jepa:
         dist = jepa_distances(z_hat, target_z[:, :K], target_z0, cfg.jepa_target, cfg.cosine_eps)
-        l_jepa = masked_mean(dist, latent_mask)
+        w_depth = depth_weights(K, cfg.jepa_depth_weight, cfg.jepa_depth_gamma, dist.device, dist.dtype)
+        l_jepa = masked_mean(dist * w_depth, latent_mask)
         total = total + cfg.lambda_jepa * l_jepa
         metrics["loss_jepa"] = l_jepa
         with torch.no_grad():

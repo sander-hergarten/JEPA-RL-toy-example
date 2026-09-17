@@ -137,3 +137,14 @@ def test_run_delta_reports_every_baseline_and_a_mean_relative_score():
         assert row[f"score_{key}"] == pytest.approx((row["mean"] - row[key]) / row["mean"])
     # the scale is anchored on the mean predictor, which by construction scores exactly 0
     assert (row["mean"] - row["mean"]) / row["mean"] == 0.0
+
+
+def test_pairwise_mean_distance_matches_an_explicit_loop():
+    from atari_jepa.action_effect import pairwise_mean_distance
+    from atari_jepa.losses import cosine_distance
+
+    z = torch.randn(4, 6, 7, 7)
+    want = torch.stack([cosine_distance(z[i : i + 1], z[j : j + 1])[0]
+                        for i in range(4) for j in range(i + 1, 4)]).mean()
+    assert pairwise_mean_distance(z) == pytest.approx(float(want), rel=1e-5)
+    assert np.isnan(pairwise_mean_distance(z[:1]))  # a single action has no pairs

@@ -148,3 +148,56 @@ def test_q_imagined_depth_is_rejected_when_negative_and_named_in_the_variant():
     assert named.variant_name().endswith("+qdepth5")
     assert "qdepth" not in LossConfig(q_imagined=True, jepa=True, reward=True,
                                       continuation=True).variant_name()
+
+
+@pytest.mark.parametrize("mode,expected", [
+    ("uniform", [1.0, 1.0, 1.0, 1.0]),
+    ("inverse", None),
+    ("discount", None),
+])
+def test_depth_weights_keep_the_loss_scale_and_tilt_toward_shallow_terms(mode, expected):
+    from atari_jepa.losses import depth_weights
+
+    w = depth_weights(4, mode, 0.5, torch.device("cpu"), torch.float32)
+    assert w.shape == (4,)
+    torch.testing.assert_close(w.mean(), torch.tensor(1.0))  # same scale as uniform
+    if expected is not None:
+        torch.testing.assert_close(w, torch.tensor(expected))
+    else:
+        assert (w[:-1] > w[1:]).all()  # strictly decreasing with depth
+    with pytest.raises(ValueError, match="unknown depth weighting"):
+        depth_weights(4, "linear", 0.5, torch.device("cpu"), torch.float32)
+
+
+def test_depth_weighting_changes_the_jepa_loss_but_not_the_other_terms():
+    from conftest import random_batch, world_model_config
+
+    from atari_jepa.agent import WorldModel
+    from atari_jepa.losses import compute_losses
+
+    cfg = world_model_config()
+    cfg.loss.jepa_target = "delta"
+    torch.manual_seed(0)
+    model = WorldModel(cfg, num_actions=4)
+    batch = random_batch()
+    _, uniform = compute_losses(model, batch, cfg.loss)
+    cfg.loss.jepa_depth_weight = "discount"
+    cfg.loss.jepa_depth_gamma = 0.5
+    _, tilted = compute_losses(model, batch, cfg.loss)
+
+    assert uniform["loss_jepa"] != tilted["loss_jepa"]
+    for key in ("loss_q", "loss_reward", "loss_continue"):
+        assert uniform[key] == pytest.approx(tilted[key])
+    # the per-depth distances themselves are untouched; only their weighting changed
+    for k in range(1, cfg.replay.rollout_steps + 1):
+        assert uniform[f"jepa_d{k}"] == pytest.approx(tilted[f"jepa_d{k}"])
+    assert cfg.loss.variant_name().endswith("+depth_discount")
+
+
+def test_depth_weight_settings_are_validated():
+    from atari_jepa.config import LossConfig
+
+    with pytest.raises(ValueError, match="jepa_depth_weight"):
+        LossConfig(jepa_depth_weight="linear")
+    with pytest.raises(ValueError, match="jepa_depth_gamma"):
+        LossConfig(jepa_depth_gamma=0.0)

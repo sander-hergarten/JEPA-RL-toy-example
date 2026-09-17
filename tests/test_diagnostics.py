@@ -74,3 +74,43 @@ def test_gradient_reach_measures_credit_travelling_back_through_the_rollout(tmp_
 
     # it leaves no gradient state behind on the model it was given
     assert all(p.grad is None for p in model.parameters())
+
+
+def test_effective_rank_is_one_for_parallel_gradients_and_n_for_orthogonal():
+    import torch
+
+    from atari_jepa.gradient_anatomy import effective_rank
+
+    assert effective_rank(torch.ones(4, 4)) == pytest.approx(1.0, abs=1e-6)
+    assert effective_rank(torch.eye(4)) == pytest.approx(4.0, abs=1e-6)
+    # a half-redundant set lands in between
+    g = torch.eye(4)
+    g[1] = g[0]
+    assert 1.0 < effective_rank(g @ g.T) < 4.0
+
+
+def test_gradient_anatomy_separates_depth_terms_and_taps_the_action_pathway(tmp_path):
+    import torch
+
+    from atari_jepa.diagnostics import collect_heldout
+    from atari_jepa.gradient_anatomy import anatomy
+
+    run = trained_run(tmp_path)
+    ckpt = load_checkpoint(run / "checkpoint.pt")
+    cfg, model = model_from_checkpoint(ckpt, torch.device("cpu"))
+    replay, _ = collect_heldout(model, cfg, ckpt["env"], torch.device("cpu"), 2, 150, 777, 0.5)
+
+    out = anatomy(model, cfg, replay, torch.device("cpu"), batch_size=8, seed=0)
+    K = cfg.replay.rollout_steps
+    a = out["depth_gradient_alignment"]
+    assert len(a["matrix"]) == K and len(a["matrix"][0]) == K
+    for i in range(K):
+        assert a["matrix"][i][i] == pytest.approx(1.0, abs=1e-4)  # each gradient with itself
+    assert 1.0 <= a["effective_rank"] <= K + 1e-6
+    assert 0.0 <= a["fraction_conflicting_pairs"] <= 1.0
+
+    # the action pathway is actually tapped: depth d sees the d actions that could have affected it
+    share = out["action_pathway_share"]["by_depth"]
+    assert [len(share[str(d)]) for d in range(1, K + 1)] == list(range(1, K + 1))
+    assert all(v >= 0 for vals in share.values() for v in vals)
+    assert all(p.grad is None for p in model.parameters())  # nothing left behind

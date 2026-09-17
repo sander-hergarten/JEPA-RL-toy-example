@@ -119,6 +119,12 @@ python -m atari_jepa.diagnostics --checkpoint RUN/checkpoint.pt --fit-fixed-batc
 # both against the conditional-mean floor. Needs replay.save_with_checkpoint.
 python -m atari_jepa.delta_probe --checkpoint RUN/checkpoint.pt --deltas 1,5,10,30,100,300
 
+# where rollout credit goes: do the K depth terms agree, conflict, or duplicate each other?
+python -m atari_jepa.gradient_anatomy --checkpoint RUN/checkpoint.pt
+
+# how action-sensitive should the latent be? counterfactual branches from one emulator state
+python -m atari_jepa.action_effect --checkpoint RUN/checkpoint.pt
+
 # resume an interrupted run (or use --auto-resume with --config)
 python -m atari_jepa.train --resume runs/pong_world_model/seed0
 
@@ -461,11 +467,19 @@ diagnostic failure in the previous one. In short:
 | 12 | H-JEPA level 2 (jumpy dynamics) vs. multi-step search, 500k | Joint training makes the encoder **action-blind** (shuffled-action penalty 48% → 2%) and costs everything; detached it is harmless but its jumpy planner (+29.2) still loses to beam search over level 1 (+57.3) |
 | 13 | Rollout horizon K ∈ {5, 10, 20, 30}, 500k | **A strictly better model that plays strictly worse**: K = 30 has the lowest latent error and the best movement probe and scores 36.9 against K = 5's 65.1. Capping the value horizon (`q_imagined_depth`) does not rescue it |
 | 14 | Δ-probe: directly-supervised jump vs. iterated rollout on frozen latents | Long range is **not** a training-coverage failure — a head trained at Δ = 100 cannot beat a constant. Long rollouts do extend the model's horizon, by making the representation temporally smooth |
+| 15 | Successor features (γ-model), 500k | Inert where it must be, useless as a value function (**+2.0**): ψ is identical across actions (pairwise cosine **1.0**), so its argmax is noise |
+| 16 | Legendre Memory Unit dynamics, K ∈ {5,10,20,30} | Matches the conv core everywhere and does not change the K slope. Its premise — gradient decay — is false: a residual chain delivers credit to the root **5.4× stronger** than at the deepest step |
+| 17 | Gradient anatomy and the counterfactual action reference | Depth terms **conflict** rather than duplicate (0% opposing pairs at K ≤ 10, 8.4% at K = 30). And the long-rollout arms are **not** action-blind: K = 30 captures 78% of the real action effect, against K = 5's 66% |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
 What held up across both games:
 
+* **Action sensitivity is only readable against a ceiling.** `atari_jepa.action_effect` measures how
+  much the choice of action really changes the next observation, by branching from one cloned emulator
+  state. Against it, the live arms capture 66–82% of the real effect and the two genuinely broken ones
+  capture 5–8%. Several claims in this file originally read a small absolute number as blindness; the
+  corrections are marked where they occur.
 * The originally specified objective ("predict the next latent", cosine on the whole map) **compresses
   the latent into very few directions** — effective rank 13–20 on Pong, 4–5 on Breakout out of 3,136 —
   and leaves the dynamics **action-blind**: shuffling the action sequence changed prediction error by
@@ -1247,9 +1261,14 @@ budget used throughout.
 * **The persistence column shows the mechanism.** At Δ = 1, persistence scores −0.067 for K = 5 but
   **+0.609** for K = 30: consecutive latents are nearly orthogonal under the `delta` target, and barely
   move under long-rollout training. Long-horizon prediction pressure produces temporally smooth,
-  slowly-varying features — the same thing that made the attached H-JEPA encoder action-blind. Across
-  three experiments now, predicting further ahead buys prediction quality by slowing the
-  representation, and slow representations play worse.
+  slowly-varying features, and slow representations play worse.
+
+  *Correction.* This paragraph originally continued "— the same thing that made the attached H-JEPA
+  encoder action-blind", treating smoothing and action-blindness as one failure. The counterfactual
+  measurement below shows they are not. The K = 30 encoder is **not** action-blind: it captures 78% of
+  the real action effect, better than K = 5's 66%. What shrinks with K is the *total* change per
+  transition (0.64 → 0.24), not the action's part of it — the action's share actually rises from 16.5%
+  to 38.1%. Something else inside that shrinking change is what control loses.
 
 Caveat: the direct head is deliberately handicapped (an action *summary* over the span, not the
 sequence, since conditioning a jump on the full sequence is what the H-JEPA macro model failed at) and
@@ -1259,7 +1278,103 @@ it is not excluded.
 Two horizons land in the same place, which may or may not mean anything: prediction dies at Δ ≈ 100,
 and the discount's effective horizon is 1/(1 − γ) = 100 decisions.
 
-### Suggested next experiments (from the observed failures)
+### Two architectural ideas that did nothing (500k, Breakout)
+
+Both were motivated by a specific account of why long rollouts fail, and both are worth recording
+because the *measurement* that killed each one is more useful than the arm itself.
+
+**Successor features** (`loss.successor`). The Δ-probe showed the long-range wall is stochasticity, not
+training coverage, and what survives at that range is a discounted average over futures — which is what
+`ψ(z,a) = E[Σ γᵏ φ(z_{t+k+1})]` estimates, trained by bootstrapping so it never unrolls anything. φ is a
+**frozen random projection**: ψ regresses a discounted sum of φ, so a learned φ makes the objective
+circular with φ = constant as a trivial optimum.
+
+| | Q | H=1 | H=5 | its own controller |
+|---|---|---|---|---|
+| conv K=5 baseline | +19.10 | +40.43 | +65.07 | – |
+| + successor features | +19.97 | +39.90 | +61.10 | **+2.00** |
+
+The head is inert where it must be, and useless as a value function: **+2.0, near random play**, with
+lookahead bootstrapping on `w·ψ` reaching only +7.8 at H=5. The diagnostic says why in one line —
+`ψ(z,a)` is identical across actions to five decimals (pairwise cosine similarity **1.0**), so `w·ψ` is
+a constant plus noise and its argmax agrees with the Q head on 20% of decisions, below the 25% chance
+rate. The action gap is 0.0195 against the Q head's 0.1504.
+
+During implementation I reported `Q_sf ≈ 1.5` against the Q head's TD target of 1.8 as evidence the
+construction was right. It was evidence the *magnitude* was right. A controller consumes the action
+*gap*, not the magnitude, and a value function can match the true return in expectation while being
+worthless. Check the gap before calling a value head validated.
+
+**Legendre Memory Unit dynamics** (`network.dynamics_kind: lmu`). The rationale was gradient decay: with
+K = 30 a deep term's gradient travels back through 30 applications of `g`, and a fixed Legendre Delay
+Network basis should preserve what a memoryless chain attenuates. The LMU matches the conv core almost
+exactly at every K (K=30: +36.2 vs +36.9 best-of-row; K=5: +68.2 vs +60.3 at H=30, within a ±10 spread)
+and does not change the rollout-length slope at all.
+
+The premise is false here, and one backward pass shows it — see the next section.
+
+### What the gradient actually does through a rollout
+
+Three measurements, none of which needed training, and all three contradicted the story I had been
+telling about them.
+
+**1. Credit does not decay backwards — it saturates.** `gradient_reach` (now part of `diagnostics`)
+backpropagates only the deepest latent term and reports `‖∂L_K/∂z_hat[k]‖` at each step:
+
+| arm | k=0 | k=K/2 | k=K−1 | k=K |
+|---|---|---|---|---|
+| conv K=30 | **5.42×** | 3.93× | 1.30× | 1.00× |
+| LMU K=30 | 4.78× | 4.00× | 1.29× | 1.00× |
+| conv K=5 | 2.34× | 1.95× | 1.29× | 1.00× |
+
+The gradient arrives at the root **stronger** than at the step that produced it, at every K and for both
+cores, because `z' = LayerNorm(z + delta)` is residual: its Jacobian is near the identity and LayerNorm
+rescales upward. The per-step gain also falls toward 1.0 rootward (1.30× → 1.007×), so the profile
+saturates rather than growing. Nothing here is starved of gradient, which is why the LMU had nothing to
+fix — and it does not even improve reach.
+
+**2. Deep terms conflict; they do not duplicate.** `atari_jepa.gradient_anatomy` backpropagates each
+depth term *separately* and compares the root gradients they deliver (3 seeds per arm):
+
+| arm | effective rank | rank/K | mean pairwise cos | **conflicting pairs** | action share (d=K, k=0) |
+|---|---|---|---|---|---|
+| K=5 | 3.21 | 0.64 | +0.425 | **0.0%** | 0.915 |
+| K=10 | 4.13 | 0.41 | +0.478 | **0.0%** | 0.696 |
+| K=20 | 7.29 | 0.36 | +0.329 | **3.3%** | 0.622 |
+| K=30 | 9.37 | 0.31 | +0.278 | **8.4%** | 0.415 |
+
+I predicted rank collapse (deep gradients becoming one repeated direction) and action-credit decaying
+with depth. Both are wrong: effective rank *rises* with K, `d=15` and `d=30` reach cosine **−0.345**,
+and the action-embedding share falls only ~2× over thirty steps. What does happen is **gradient
+conflict** — at K = 5 and K = 10 no pair of depth terms opposes another; by K = 30, 8.4% do. Uniform
+weighting treats a K-step rollout as K equally important tasks, and past K ≈ 20 they start fighting.
+A feature that barely changes is the compromise they all agree on: predictable at depth 1 *and* depth
+30, and useless for control. That is the smoothing the Δ-probe measured, arrived at from the gradients.
+
+**3. Action sensitivity, finally calibrated** (`atari_jepa.action_effect`). Every action-sensitivity
+number in this repository was uncalibrated: nobody had measured how much the choice of action actually
+changes the next observation. From one identical emulator state (`cloneSystemState`, so branches share
+the sticky-action draw and differ only in the action), take every action, encode each real successor,
+and compute the same statistic the diagnostics compute on predicted latents:
+
+| arm | real effect | model | model/real | total change | action's share |
+|---|---|---|---|---|---|
+| conv K=5 | 0.1055 | 0.0699 | **0.66×** | 0.6376 | 16.5% |
+| conv K=10 | 0.1472 | 0.1157 | 0.79× | 0.5285 | 28.0% |
+| conv K=20 | 0.1201 | 0.0992 | 0.82× | 0.3488 | 34.3% |
+| conv K=30 | 0.0917 | 0.0706 | **0.78×** | 0.2402 | 38.1% |
+| H-JEPA attached | 0.0160 | 0.0008 | **0.05×** | 0.5192 | 3.1% |
+| LMU offline frozen | 0.0009 | 0.0001 | 0.08× | 0.0161 | 5.5% |
+
+**The long-rollout arms are not action-blind.** K = 30 captures 78% of the real effect, *better* than
+K = 5's 66%. "Action distance 0.0701" looked alarming only because the ceiling was unknown. The
+genuinely blind arms are the two pathological ones, and they fail differently: H-JEPA-attached faces a
+normal-sized real effect (0.0160 of a 0.52 total change) and has stopped representing it, while the
+frozen-offline encoder barely distinguishes successive frames at all (total change 0.0161).
+
+This also relocates the K story. The action effect holds roughly steady while the **total** change per
+transition collapses 0.64 → 0.24, so the action's *share* rises. Long rollouts do not remove the action
+from the latent; they remove much of everything else, and control loses whatever that was.
 
 ### Suggested next experiments (from the observed failures)
 
