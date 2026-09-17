@@ -1,0 +1,23 @@
+README.md
+  s_9b9fc691f37d53::t_caef7995411c1b 361-367
+src/atari_jepa/diagnostics.py
+  s_9b9fc691f37d53::t_8797ef0614f61c 43,47,57-102,554-555,595-602
+tests/test_diagnostics.py
+  s_9b9fc691f37d53::t_7e50e64a04106d 6,51-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fb786d1979c72317ae9abb39054af4ba6cd5eb95",
+  "prompts": {},
+  "sessions": {
+    "s_9b9fc691f37d53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9b9fc691f37d53",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
