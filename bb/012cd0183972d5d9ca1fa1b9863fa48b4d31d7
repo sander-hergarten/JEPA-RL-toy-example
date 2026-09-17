@@ -1,0 +1,119 @@
+README.md
+  s_d23c0b586faeed::t_399f842b335809 473-475,1382-1436
+docs/evidence_dossier.md
+  s_d23c0b586faeed::t_0504d0eae0230b 1-332
+docs/rollout_dissociation_analysis.md
+  s_d23c0b586faeed::t_22fb1671106eaa 1-203
+scripts/probes/agg6.py
+  s_d23c0b586faeed::t_5909bdcde665f3 1-25
+scripts/probes/agg_all.py
+  s_d23c0b586faeed::t_c40eba7faaa845 1-67
+scripts/probes/agg_depth.py
+  s_d23c0b586faeed::t_d0acd427cf1c3f 1-52
+scripts/probes/agg_embed.py
+  s_d23c0b586faeed::t_2ec9f8200b1227 1-67
+scripts/probes/agg_hjepa.py
+  s_d23c0b586faeed::t_c7c307e22e7381 1-38
+scripts/probes/agg_k.py
+  s_d23c0b586faeed::t_341bea7315c80f 1-53
+scripts/probes/agg_k2.py
+  s_d23c0b586faeed::t_0d82124a6f2ee1 1-67
+scripts/probes/agg_prev.py
+  s_d23c0b586faeed::t_099807e3f26382 1-63
+scripts/probes/agg_probe.py
+  s_d23c0b586faeed::t_7d976ec9eec677 1-40
+scripts/probes/analyse_legs.py
+  s_d23c0b586faeed::t_33f484fccd27ce 1-138
+scripts/probes/approach_probe.py
+  s_d23c0b586faeed::t_0d5a605dd66787 1-190
+scripts/probes/approach_probe2.py
+  s_d23c0b586faeed::t_049b8f20040f8b 1-165
+scripts/probes/cf_ordering.py
+  s_d23c0b586faeed::t_2e9acb5fc7a904 1-97
+scripts/probes/closed_loop_kinematics.py
+  s_d23c0b586faeed::t_f571aff0affc57 1-131
+scripts/probes/closed_loop_raw.py
+  s_d23c0b586faeed::t_33f8ca7c5c87bc 1-70
+scripts/probes/decisive_agg.py
+  s_d23c0b586faeed::t_7d79fee709fcb6 1-51
+scripts/probes/decisive_probe.py
+  s_d23c0b586faeed::t_adc6874b967bc0 1-208
+scripts/probes/decode_through_model.py
+  s_d23c0b586faeed::t_2b62ac7fe96afb 1-145
+scripts/probes/diag.py
+  s_d23c0b586faeed::t_fcfb248870cdeb 1-37
+scripts/probes/emb_table.py
+  s_d23c0b586faeed::t_7f64c956f0b266 1-14
+scripts/probes/geom_probe.py
+  s_d23c0b586faeed::t_b22b0d278525b0 1-223
+scripts/probes/gradflow.py
+  s_d23c0b586faeed::t_11b91b835a2b99 1-74
+scripts/probes/history_split_closed_loop.py
+  s_d23c0b586faeed::t_890e8dccd917bc 1-114
+scripts/probes/jac_spectrum.py
+  s_d23c0b586faeed::t_9f7a347c3b887c 1-70
+scripts/probes/jac_top.py
+  s_d23c0b586faeed::t_dc9ff978b4d67f 1-67
+scripts/probes/jitter.py
+  s_d23c0b586faeed::t_99945f200b8765 1-42
+scripts/probes/jitter2.py
+  s_d23c0b586faeed::t_b36bbac1668f21 1-41
+scripts/probes/lead2_probe.py
+  s_d23c0b586faeed::t_a96601100f8d6b 1-185
+scripts/probes/lead_split.py
+  s_d23c0b586faeed::t_cea81ac26db379 1-49
+scripts/probes/mc_truth.py
+  s_d23c0b586faeed::t_80aa3e1e8af464 1-148
+scripts/probes/o4_fixed_oracle.py
+  s_d23c0b586faeed::t_7943c9f19263bd 1-117
+scripts/probes/oracle_ctl.py
+  s_d23c0b586faeed::t_b55c55052444d5 1-98
+scripts/probes/oracle_eval.py
+  s_d23c0b586faeed::t_a44aaea47c5f20 1-97
+scripts/probes/oracle_eval2.py
+  s_d23c0b586faeed::t_cef8ad419d4288 1-119
+scripts/probes/oracle_eval3.py
+  s_d23c0b586faeed::t_c2ae9f2c28b9e4 1-123
+scripts/probes/oracle_planner.py
+  s_d23c0b586faeed::t_09a120bbda31f2 1-86
+scripts/probes/plan_signal.py
+  s_d23c0b586faeed::t_74fb87205c1ce7 1-84
+scripts/probes/pull_evals.py
+  s_d23c0b586faeed::t_eefc06788471c0 1-47
+scripts/probes/refute_eps001.py
+  s_d23c0b586faeed::t_808d8904ee846c 1-46
+scripts/probes/refute_traces.py
+  s_d23c0b586faeed::t_1d2ebcb60f63d3 1-69
+scripts/probes/refute_w19.py
+  s_d23c0b586faeed::t_46650a41f9fb2b 1-77
+scripts/probes/sep_se.py
+  s_d23c0b586faeed::t_e5a8cccf1334f7 1-20
+scripts/probes/share_vs_gain.py
+  s_d23c0b586faeed::t_7239dc59247d82 1-96
+scripts/probes/trace.py
+  s_d23c0b586faeed::t_d1c32842addee7 1-11
+scripts/probes/ttc_probe.py
+  s_d23c0b586faeed::t_c8f2b25b9a7421 1-205
+scripts/probes/ttc_probe_planner.py
+  s_d23c0b586faeed::t_68e1ab47d0e20f 1-213
+scripts/probes/updates_avg.py
+  s_d23c0b586faeed::t_0beb357d7427d8 1-58
+scripts/probes/writein_ablation.py
+  s_d23c0b586faeed::t_ecc5f2031987b6 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bb012cd0183972d5d9ca1fa1b9863fa48b4d31d7",
+  "prompts": {},
+  "sessions": {
+    "s_d23c0b586faeed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_d23c0b586faeed",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
