@@ -1,0 +1,45 @@
+README.md
+  s_35745ff89b0585::t_ee649931b7df36 122-127,470-472,478-482,1264-1271,1281-1377
+configs/sample_eff/breakout_se_k30_depth_discount_500k.yaml
+  s_35745ff89b0585::t_4618ec77dc282e 1-71
+configs/sample_eff/breakout_se_k30_depth_inverse_500k.yaml
+  s_35745ff89b0585::t_854915ba0febda 1-70
+scripts/run_queue.sh
+  s_35745ff89b0585::t_be3940a8d6057a 11
+scripts/run_wave19.sh
+  s_35745ff89b0585::t_7d0dc08c35101f 1-56
+src/atari_jepa/action_effect.py
+  s_35745ff89b0585::t_c7c7c7f624ae51 1-146
+src/atari_jepa/config.py
+  s_35745ff89b0585::t_b286ebb10595b0 121-127,174-178,196-197
+src/atari_jepa/envs.py
+  s_35745ff89b0585::t_0744ede485e63c 205-226
+src/atari_jepa/gradient_anatomy.py
+  s_35745ff89b0585::t_e5133191414f90 1-179
+src/atari_jepa/losses.py
+  s_35745ff89b0585::t_6af5235e199920 235-253,349-350
+tests/test_delta_probe.py
+  s_35745ff89b0585::t_bdf1fa3792e183 140-150
+tests/test_diagnostics.py
+  s_35745ff89b0585::t_53984d73a03760 77-116
+tests/test_envs.py
+  s_35745ff89b0585::t_30e9fceb899329 121-152
+tests/test_targets.py
+  s_35745ff89b0585::t_af0d66d024f8c8 151-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "08c15ac7dc09fb00ecee4076b9fc43412b5a0d37",
+  "prompts": {},
+  "sessions": {
+    "s_35745ff89b0585": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_35745ff89b0585",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
