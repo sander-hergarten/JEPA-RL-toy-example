@@ -470,6 +470,9 @@ diagnostic failure in the previous one. In short:
 | 15 | Successor features (γ-model), 500k | Inert where it must be, useless as a value function (**+2.0**): ψ is identical across actions (pairwise cosine **1.0**), so its argmax is noise |
 | 16 | Legendre Memory Unit dynamics, K ∈ {5,10,20,30} | Matches the conv core everywhere and does not change the K slope. Its premise — gradient decay — is false: a residual chain delivers credit to the root **5.4× stronger** than at the deepest step |
 | 17 | Gradient anatomy and the counterfactual action reference | Depth terms **conflict** rather than duplicate (0% opposing pairs at K ≤ 10, 8.4% at K = 30). And the long-rollout arms are **not** action-blind: K = 30 captures 78% of the real action effect, against K = 5's 66% |
+| 18 | Ground truth per decision: MC returns, a catch oracle at paddle contact, state probes | The Q-policy barely degrades with K; the **planning gain** is what collapses (+21 → +2) and it is a *survival* gain. Ball position is not lost; the K=30 latent encodes ball *velocity* and K=5's does not. Against actual outcomes the K=30 model-based estimate is the worst of three at contact; the same Q head on the real successor is the best |
+| 19 | Depth-weighted latent loss at K=30 (wave 19, `inverse`) | **Collapse, not rescue**: Q +4, H=1 +5, action distance 0.003 — the attached-H-JEPA signature. Re-weighting opened a degenerate shortcut. The `discount` arm is the clean test and is still training |
+| 20 | Seven-lens adversarial analysis of the whole record (`docs/rollout_dissociation_analysis.md`) | No single mechanism survives its refuters. Three readings remain — one-step map fidelity at contact, a jointly-trained Q∘g composite, the value head's contact resolution — with the discriminating tests written down |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
 
@@ -1375,6 +1378,61 @@ frozen-offline encoder barely distinguishes successive frames at all (total chan
 This also relocates the K story. The action effect holds roughly steady while the **total** change per
 transition collapses 0.64 → 0.24, so the action's *share* rises. Long rollouts do not remove the action
 from the latent; they remove much of everything else, and control loses whatever that was.
+
+### Why longer rollouts play worse: what the record supports (multi-lens analysis)
+
+The full account, written against every number on disk and audited for misquotes and omissions, is
+`docs/rollout_dissociation_analysis.md`; the evidence it was written from is `docs/evidence_dossier.md`;
+the probes it ran are `scripts/probes/`. The short version:
+
+**The effect is narrower than "better model, worse control".** The Q-policy barely degrades with K
+(+19.1 → +16.2) and its lives last as long at every K. What collapses is the **planning gain**: H=1
+over Q is +21.3 at K=5, +10.8 at K=10, +4.0 at K=20, +2.1 at K=30 — and it is a *survival* gain, not a
+scoring one (decisions per life for the H=1 planner fall 229 → 170 while the clipped scoring rate is
+flat). Deeper search recovers about half of it at K=30 and none of the rest.
+
+**A long list of natural explanations is now measured out**, each by a specific number: vanishing
+credit (reach 5.4× *growing*), rank or variance collapse (rank 140, std 0.83), action blindness (0.78×
+of the real action effect at K=30), loss of ball or paddle position (ball_x R² 0.85 flat; paddle
+*improves*), the value head's imagined-depth supervision (`qd5` arms), the dynamics core (LMU
+identical), an H > K extrapolation penalty (flat past H=5), long-range training coverage (Δ-probe),
+the reward and continuation heads (action ranges ~0), a collapse of the planner's preference magnitude
+or override rate (both flat), and the critic as a global explanation (on real successors the K=30 Q
+head is the *best* estimator in the Monte-Carlo table). Depth re-weighting as a fix is out too: the
+K=30 `inverse` arm went action-blind (action distance 0.003) and scores +4 with every controller.
+
+**What the ground-truth probes show.** Branching from cloned emulator states and rolling each branch
+out for real (60 decisions, shared RNG) gives an actual return per action. Against it, at K=5 the
+model-based one-step estimate `Q(g(z,a))` is the best of {actor, critic-on-real-successor, model}; at
+K=30 it is the worst and indistinguishable from chance, while the same Q head applied to the **real**
+successor is the best estimator of any arm. A catch oracle in the last two decisions before paddle
+contact says the same: the planner's edge over its own actor shrinks with K on every outcome-based
+instrument (model accuracy 0.857 → 0.784, every K=5 seed above every K=30 seed) — though not on a
+direction-based one, which is unresolved. And the counterfactual one-step prediction at K=30 is
+*closer* to the real successor by cosine (0.099 vs 0.148) while leading the value head to a worse
+decision than the real successor does.
+
+**What changes in the representation** is compression and temporal coherence, not loss of state: the
+latent's effective rank falls 333 → 140, consecutive latents move 3× less (centered gap-1 distance
+0.77 → 0.29, still correlated at gap 50), and — the reverse of the obvious guess — the K=30 latent
+linearly encodes **ball velocity** (v_x R² 0.29–0.41) where K=5's does not (−0.34 to +0.05). The
+long-K model is richer, smoother, and worse at the one thing the planner consumes.
+
+**Three readings survive their refuters, and they disagree about what would fix it:** (A) the
+one-step map's output at contact-adjacent states is what is wrong, so a better one-step head on the
+frozen K=30 encoder restores the gain; (B) the K=5 gain was largely a property of `Q∘g` as a jointly
+trained composite, and no single component is identifiably broken; (C) the value head's ability to
+separate catch from miss one decision early degrades at K≥20, so no one-sample successor read — predicted
+or real — adds anything there. The discriminating tests are in the document; the cheapest (a catch
+oracle on the `qd5` and LMU arms, a delta-direction fidelity split, a swap-in one-step head) run on
+existing checkpoints in minutes.
+
+**Two caveats on my own instruments.** The counterfactual harness restores the emulator RNG but not the
+sticky-action context: 3.4% of branch outcomes depend on which branch ran before (measured), which
+biases the counterfactual numbers slightly and equally across K, and makes closed-loop *oracle
+controllers* built on it unreliable (they swing 8 points with branch order). A corrected harness
+(`scripts/probes/o4_fixed_oracle.py`) exists and has not been run. And the ground-truth probes are
+150–300 states per seed; differences below ~0.03 in regret or ~0.04 in τ are within noise.
 
 ### Suggested next experiments (from the observed failures)
 
