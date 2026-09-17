@@ -358,6 +358,13 @@ checkpoint and its target encoder:
   balanced accuracy,
 * for checkpoints with an inverse head, its held-out action and movement accuracy on real pairs
   `(f(x_t), f(x_{t+1}))` and on predicted pairs `(z_hat[0], z_hat[1])`,
+* **gradient reach**: `‖∂L_K/∂z_hat[k]‖` at every rollout step for the *deepest* latent term alone,
+  normalized by its value at step K. "Long rollouts must be losing gradient" is the intuitive
+  explanation for the rollout-length results and it is checkable in one backward pass — here it is
+  false. The dynamics is residual (`z' = LayerNorm(z + delta)`), whose Jacobian is near the identity,
+  so credit does not attenuate: at K = 30 the depth-30 term reaches the root **5.4× stronger** than at
+  the step that produced it (conv 5.42×, LMU 4.78×, and 2.3–5.7× across every K tested). The encoder is
+  not starved of long-horizon signal, it is saturated with it,
 * controller latency, and the held-out episodes' returns, decisions and frames.
 
 `--fit-fixed-batch N [--fit-components ...]` optimizes a *copy* of the model on one held-out batch with

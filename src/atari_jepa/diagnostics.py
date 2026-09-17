@@ -40,9 +40,11 @@ from .envs import FrameStacker, make_env
 from .losses import (
     compute_losses,
     cosine_distance,
+    dynamics_step,
     double_dqn_value,
     expected_reward,
     latent_std,
+    jepa_distances,
     reward_to_class,
     td_targets,
     unroll,
@@ -50,6 +52,52 @@ from .losses import (
 from .planning import QController, one_step_scores
 from .replay import SequenceReplay
 from .utils import configure_threads, select_device, write_json
+
+
+
+def gradient_reach(model, cfg: Config, replay: SequenceReplay, device, batch_size: int,
+                   seed: int) -> dict[str, Any]:
+    """How far back through the rollout does credit from the *deepest* prediction term travel?
+
+    Backpropagates only the depth-K latent term and reports ||dL/dz_hat[k]|| at every k, normalized by
+    its value at k = K. A chain that attenuates credit gives a profile far below 1 at k = 0; a residual
+    chain (z' = LayerNorm(z + delta)) has Jacobian near the identity and does not attenuate at all.
+
+    Worth reporting on every run because "long rollouts must be losing gradient" is the intuitive
+    explanation for the rollout-length results, and it is checkable in one backward pass.
+    """
+    K = cfg.replay.rollout_steps
+    batch = replay.sample(batch_size, K, np.random.default_rng(seed + 7919)).to_torch(device)
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.enable_grad():
+            z_hat, state = [model.encoder(batch.observations[:, 0])], None
+            for k in range(K):
+                z_next, state = dynamics_step(model.dynamics, z_hat[k], batch.actions[:, k], state)
+                z_hat.append(z_next)
+            for z in z_hat:
+                z.retain_grad()
+            with torch.no_grad():
+                flat = batch.observations[:, 1:].flatten(0, 1)
+                target_z = model.target_encoder(flat).unflatten(0, (batch.batch_size, K))
+                target_z0 = model.target_encoder(batch.observations[:, 0])
+            dist = jepa_distances(z_hat, target_z, target_z0, cfg.loss.jepa_target, cfg.loss.cosine_eps)
+            model.zero_grad(set_to_none=True)
+            dist[:, K - 1].mean().backward()
+            norms = [float(z.grad.norm()) if z.grad is not None else float("nan") for z in z_hat]
+    finally:
+        model.zero_grad(set_to_none=True)
+        model.train(was_training)
+    deepest = norms[K] if norms[K] > 0 else float("nan")
+    return {
+        "note": "grad norm of the depth-K latent term at each rollout step, relative to step K",
+        "rollout_steps": K,
+        "batch_size": batch_size,
+        "grad_norm_by_step": norms,
+        "relative_to_deepest": [n / deepest for n in norms],
+        "reach_root_over_deepest": norms[0] / deepest,
+    }
 
 
 def collect_heldout(model, cfg: Config, env_meta: dict[str, Any], device, episodes: int, max_decisions: int,
@@ -503,6 +551,8 @@ def main(argv: list[str] | None = None) -> None:
     result.update(evaluate_model(model, cfg, replay, device, depths, d.batch_size, seed=seed_base,
                                  action_meanings=ckpt["env"]["action_meanings"]))
     result["latency"] = controller_latency(model, cfg, replay, device)
+    if cfg.loss.jepa:
+        result["gradient_reach"] = gradient_reach(model, cfg, replay, device, d.batch_size, seed_base)
     if args.fit_fixed_batch:
         result["fixed_batch_fit"] = fit_fixed_batch(model, cfg, replay, device, args.fit_fixed_batch,
                                                     cfg.optim.batch_size, components=args.fit_components)
@@ -542,6 +592,14 @@ def print_summary(r: dict[str, Any]) -> None:
               f"{_f(en['precision'])}/{_f(en['recall'])} ({en['events']:>3})  {_f(cn['bce'])}  "
               f"{_f(tm['precision'])}/{_f(tm['recall'])} ({tm['events']})  {_f(q['huber'])}")
     a = r["action_sensitivity_at_root"]
+    g = r.get("gradient_reach")
+    if g:
+        rel = g["relative_to_deepest"]
+        K = g["rollout_steps"]
+        marks = sorted({0, max(K // 2, 1), K})
+        shown = "  ".join(f"k={k}:{rel[k]:.2f}x" for k in marks)
+        print(f"gradient reach (depth-{K} term, relative to step {K}): {shown}   "
+              f"root/deepest {g['reach_root_over_deepest']:.2f}x")
     print(f"action sensitivity: next-latent pairwise dist {a['mean_pairwise_cosine_distance_next_latent']:.4f}, "
           f"E[r] range {a['mean_expected_reward_range']:.4f}, P(cont) range {a['mean_continuation_prob_range']:.4f}")
     mp = r["movement_probe"]

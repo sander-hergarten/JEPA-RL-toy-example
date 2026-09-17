@@ -3,6 +3,7 @@
 import json
 import math
 
+import pytest
 import torch
 from test_checkpoint import tiny_config
 
@@ -47,3 +48,29 @@ def test_diagnostics_cli_reports_finite_metrics(tmp_path):
     assert online["std_mean"] > 0 and online["frac_dims_std_below_1e-3"] < 1.0  # latents are not constant
     assert r["reward_prediction"]["depth_0"]["count"] == r["q_td_error"]["depth_0"]["count"]
     assert math.isfinite(r["q_td_error"]["depth_0"]["huber"])
+
+
+def test_gradient_reach_measures_credit_travelling_back_through_the_rollout(tmp_path):
+    """A residual chain (z' = LayerNorm(z + delta)) must not attenuate credit: the whole point of
+    reporting this is that "long rollouts lose gradient" is checkable rather than assumed."""
+    import numpy as np
+
+    from atari_jepa.diagnostics import gradient_reach
+
+    run = trained_run(tmp_path)
+    ckpt = load_checkpoint(run / "checkpoint.pt")
+    cfg, model = model_from_checkpoint(ckpt, torch.device("cpu"))
+    device = torch.device("cpu")
+    replay, _ = collect_heldout(model, cfg, ckpt["env"], device, 2, 150, 777, 0.5)
+
+    out = gradient_reach(model, cfg, replay, device, batch_size=8, seed=0)
+    norms = out["grad_norm_by_step"]
+    assert len(norms) == cfg.replay.rollout_steps + 1
+    assert all(np.isfinite(n) and n > 0 for n in norms)
+    assert out["relative_to_deepest"][cfg.replay.rollout_steps] == pytest.approx(1.0)
+    assert out["reach_root_over_deepest"] == pytest.approx(norms[0] / norms[-1])
+    # the residual path carries credit all the way back rather than decaying it away
+    assert out["reach_root_over_deepest"] > 0.1
+
+    # it leaves no gradient state behind on the model it was given
+    assert all(p.grad is None for p in model.parameters())
