@@ -347,7 +347,10 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
     if cfg.jepa:
         dist = jepa_distances(z_hat, target_z[:, :K], target_z0, cfg.jepa_target, cfg.cosine_eps)
         w_depth = depth_weights(K, cfg.jepa_depth_weight, cfg.jepa_depth_gamma, dist.device, dist.dtype)
-        l_jepa = masked_mean(dist * w_depth, latent_mask)
+        jepa_mask = latent_mask
+        if cfg.jepa_depth:  # supervise only the first jepa_depth steps; deeper predictions get no gradient
+            jepa_mask = latent_mask & (torch.arange(K, device=dist.device) < cfg.jepa_depth)[None, :]
+        l_jepa = masked_mean(dist * w_depth, jepa_mask)
         total = total + cfg.lambda_jepa * l_jepa
         metrics["loss_jepa"] = l_jepa
         with torch.no_grad():
@@ -359,21 +362,22 @@ def compute_losses(model, batch, cfg: LossConfig, as_tensors: bool = False) -> t
                                          cfg.cosine_eps)[:, k]
                 metrics[f"persist_d{k + 1}"] = masked_mean(persist, latent_mask[:, k])
 
+    hK = min(cfg.head_depth or K, K)  # imagined depths the reward/continuation heads are trained on
     if cfg.reward:
-        logits = torch.stack([model.reward_head(z_hat[k], actions[:, k]) for k in range(K)], dim=1)
-        classes = reward_to_class(rewards, valid, check=not as_tensors)
+        logits = torch.stack([model.reward_head(z_hat[k], actions[:, k]) for k in range(hK)], dim=1)
+        classes = reward_to_class(rewards[:, :hK], valid[:, :hK], check=not as_tensors)
         if as_tensors:
-            metrics["_reward_out_of_range"] = reward_out_of_range(rewards, valid)
-        ce = F.cross_entropy(logits.flatten(0, 1), classes.flatten(), reduction="none").view(B, K)
-        l_reward = masked_mean(ce, valid)
+            metrics["_reward_out_of_range"] = reward_out_of_range(rewards[:, :hK], valid[:, :hK])
+        ce = F.cross_entropy(logits.flatten(0, 1), classes.flatten(), reduction="none").view(B, hK)
+        l_reward = masked_mean(ce, valid[:, :hK])
         total = total + cfg.lambda_reward * l_reward
         metrics["loss_reward"] = l_reward
 
     if cfg.continuation:
-        logits = torch.stack([model.continuation_head(z_hat[k], actions[:, k]) for k in range(K)], dim=1)
-        target = (~terminated).float()
+        logits = torch.stack([model.continuation_head(z_hat[k], actions[:, k]) for k in range(hK)], dim=1)
+        target = (~terminated[:, :hK]).float()
         bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
-        l_cont = masked_mean(bce, valid)
+        l_cont = masked_mean(bce, valid[:, :hK])
         total = total + cfg.lambda_continue * l_cont
         metrics["loss_continue"] = l_cont
 

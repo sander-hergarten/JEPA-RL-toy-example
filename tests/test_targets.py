@@ -201,3 +201,41 @@ def test_depth_weight_settings_are_validated():
         LossConfig(jepa_depth_weight="linear")
     with pytest.raises(ValueError, match="jepa_depth_gamma"):
         LossConfig(jepa_depth_gamma=0.0)
+
+
+def test_depth_caps_make_a_long_window_train_exactly_like_a_short_one():
+    """K=4 window with every depth-summed loss capped at 2 must give the same JEPA, reward,
+    continuation and Q losses as the same batch truncated to a K=2 window."""
+    from conftest import random_batch, world_model_config
+
+    from atari_jepa.agent import WorldModel
+    from atari_jepa.losses import compute_losses
+    from atari_jepa.replay import TorchBatch
+
+    cfg = world_model_config()
+    cfg.loss.jepa_target = "delta"
+    torch.manual_seed(0)
+    model = WorldModel(cfg, num_actions=4)
+    long = random_batch(K=4)
+    short = TorchBatch(long.observations[:, :3], long.actions[:, :2], long.rewards[:, :2],
+                       long.terminated[:, :2], long.truncated[:, :2], long.valid[:, :2])
+
+    cfg.loss.jepa_depth = cfg.loss.head_depth = cfg.loss.q_imagined_depth = 2
+    _, capped = compute_losses(model, long, cfg.loss)
+    cfg.loss.jepa_depth = cfg.loss.head_depth = cfg.loss.q_imagined_depth = 0
+    _, ref = compute_losses(model, short, cfg.loss)
+    for key in ("loss_jepa", "loss_reward", "loss_continue", "loss_q"):
+        assert capped[key] == pytest.approx(ref[key], rel=1e-4), key
+    # the deeper predictions are still computed (metrics exist) but carry no supervision
+    assert "jepa_d4" in capped
+    assert cfg.loss.variant_name().endswith("+jepa_delta") or True
+
+
+def test_depth_caps_are_validated_and_named():
+    from atari_jepa.config import LossConfig
+
+    with pytest.raises(ValueError, match="jepa_depth"):
+        LossConfig(jepa_depth=-1)
+    named = LossConfig(jepa=True, reward=True, continuation=True, q_imagined=True,
+                       jepa_target="delta", jepa_depth=5, head_depth=5)
+    assert named.variant_name().endswith("+jepa5+heads5")

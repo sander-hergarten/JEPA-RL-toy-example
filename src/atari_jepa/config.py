@@ -125,6 +125,13 @@ class LossConfig:
     # (jepa_depth_gamma^k) tilt the sum back toward the shallow terms that still carry the action.
     jepa_depth_weight: str = "uniform"
     jepa_depth_gamma: float = 0.9
+    # Depth caps for the other depth-summed losses, mirroring q_imagined_depth (0 = all K). The
+    # discount-weighted K=30 arm de-smoothed the latent back to K=5's temporal statistics, kept a
+    # healthy Q and the highest action sensitivity of any arm, and did not recover control -- so what a
+    # long rollout breaks is not (only) in the latent loss's deep terms. These caps restrict each
+    # depth-summed loss independently, to partition the K effect between the latent loss and the heads.
+    jepa_depth: int = 0  # latent (JEPA) loss supervises depths 1..jepa_depth only
+    head_depth: int = 0  # reward and continuation heads supervised on imagined depths 0..head_depth-1 only
     # H-JEPA level 2: a jumpy dynamics that predicts `macro_horizon` steps ahead in one shot, with its
     # own macro-return and macro-continuation heads. Enables planning over action sequences without
     # unrolling the one-step model.
@@ -169,6 +176,9 @@ class LossConfig:
             raise ValueError(f"loss.macro_horizon must be >= 2, got {self.macro_horizon}")
         if self.q_imagined_depth < 0:
             raise ValueError(f"loss.q_imagined_depth must be >= 0 (0 = all K), got {self.q_imagined_depth}")
+        if self.jepa_depth < 0 or self.head_depth < 0:
+            raise ValueError(f"loss.jepa_depth and loss.head_depth must be >= 0 (0 = all K), "
+                             f"got {self.jepa_depth}, {self.head_depth}")
         if self.successor and self.lambda_sf <= 0:
             raise ValueError(f"loss.successor needs lambda_sf > 0, got {self.lambda_sf}")
         if self.jepa_depth_weight not in ("uniform", "inverse", "discount"):
@@ -195,6 +205,10 @@ class LossConfig:
             suffix += f"+jepa_{self.jepa_target}"
         if self.jepa and self.jepa_depth_weight != "uniform":
             suffix += f"+depth_{self.jepa_depth_weight}"
+        if self.jepa and self.jepa_depth:
+            suffix += f"+jepa{self.jepa_depth}"
+        if (self.reward or self.continuation) and self.head_depth:
+            suffix += f"+heads{self.head_depth}"
         if self.q_imagined and self.q_imagined_depth:
             suffix += f"+qdepth{self.q_imagined_depth}"
         if self.successor:

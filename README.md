@@ -471,7 +471,7 @@ diagnostic failure in the previous one. In short:
 | 16 | Legendre Memory Unit dynamics, K ∈ {5,10,20,30} | Matches the conv core everywhere and does not change the K slope. Its premise — gradient decay — is false: a residual chain delivers credit to the root **5.4× stronger** than at the deepest step |
 | 17 | Gradient anatomy and the counterfactual action reference | Depth terms **conflict** rather than duplicate (0% opposing pairs at K ≤ 10, 8.4% at K = 30). And the long-rollout arms are **not** action-blind: K = 30 captures 78% of the real action effect, against K = 5's 66% |
 | 18 | Ground truth per decision: MC returns, a catch oracle at paddle contact, state probes | The Q-policy barely degrades with K; the **planning gain** is what collapses (+21 → +2) and it is a *survival* gain. Ball position is not lost; the K=30 latent encodes ball *velocity* and K=5's does not. Against actual outcomes the K=30 model-based estimate is the worst of three at contact; the same Q head on the real successor is the best |
-| 19 | Depth-weighted latent loss at K=30 (wave 19, `inverse`) | **Collapse, not rescue**: Q +4, H=1 +5, action distance 0.003 — the attached-H-JEPA signature. Re-weighting opened a degenerate shortcut. The `discount` arm is the clean test and is still training |
+| 19 | Depth-weighted latent loss at K=30 (wave 19) | `inverse` (1/(k+1)): **collapse** — Q +4, action distance 0.003, the attached-H-JEPA signature. `discount` (0.9ᵏ): the pre-registered falsifier — it **de-smoothed the latent back to K=5's statistics with a healthy Q and the highest action sensitivity of any arm, and control did not move** (H=1 +20.3 vs +18.3). Temporal smoothing is not what breaks the planner |
 | 20 | Seven-lens adversarial analysis of the whole record (`docs/rollout_dissociation_analysis.md`) | No single mechanism survives its refuters. Three readings remain — one-step map fidelity at contact, a jointly-trained Q∘g composite, the value head's contact resolution — with the discriminating tests written down |
 | 8 | Long runs: 1.5M (4 variants) and 2.5M (top 2), Breakout | Joint delta+motion reaches +38.8 at 1.5M and **+57.7 with lookahead at 2.5M** (3.1× model-free); offline fine-tuned +20.7; frozen stays flat at +2 |
 | 7 | Offline "learn by observing": RL → frames → JEPA (MSE + SIGReg) → re-attach RL | SIGReg ends collapse (rank 100–198, no tuning). Frozen features never support control (Pong ≈ random); as an *initialization* with the matched delta+motion recipe it gives the best Pong result here, but stays far behind joint training on Breakout |
@@ -1426,6 +1426,33 @@ separate catch from miss one decision early degrades at K≥20, so no one-sample
 or real — adds anything there. The discriminating tests are in the document; the cheapest (a catch
 oracle on the `qd5` and LMU arms, a delta-direction fidelity split, a swap-in one-step head) run on
 existing checkpoints in minutes.
+
+**Wave 19's `discount` arm falsifies the premise the three readings shared.** It was pre-registered
+before it ran: *if the arm de-smooths with a healthy Q and H=1 stays ≤ +22, the smoothing premise is
+wrong and the cause is K itself.* That is what happened:
+
+| K=30 arm | Q | H=1 | H=5 | H=30 | held-out persistence d=1 | Δ=1 persistence score | action dist | `loss_q` | conflicting pairs |
+|---|---|---|---|---|---|---|---|---|---|
+| conv K=5 (reference) | +19.1 | +40.4 | +65.1 | +60.3 | 0.650 | −0.067 | 0.066 | 0.015 | 0% |
+| uniform | +16.2 | +18.3 | +34.0 | +36.9 | 0.246 | +0.609 | 0.070 | 0.021 | 8.4% |
+| `inverse` | +4.1 | +4.6 | +4.4 | +3.1 | 0.778 | −0.659 | **0.003** | 0.058 | 11.3% |
+| `discount` | +15.3 | **+20.3** | +34.0 | +43.3 | **0.607** | **+0.060** | **0.102** | 0.028 | 11.4% |
+
+Weighting the latent loss by 0.9ᵏ returned the latent's temporal statistics to K=5's (persistence 0.61
+vs 0.65; Δ=1 persistence score +0.06 vs −0.07), kept a healthy value head (`loss_q` 0.028, Q +15.3)
+and the highest action sensitivity in the repository (0.102), retained most of the long-horizon
+prediction gain (Δ=30 iterated score +0.33 vs K=5's +0.04), and **left the planning gain exactly where
+uniform K=30 had it** (H=1 +20.3 vs +18.3, H=5 identical at +34.0). On every representation statistic in
+this repository it is a K=5 latent: effective rank 269 (K=5 333, K=30 140), gap-1 temporal distance 0.70
+(0.77 / 0.29), gap-50 0.94 (0.94 / 0.86), total latent change per transition 0.60 (0.64 / 0.24), and
+ball/paddle decodability at K=5's level. The gradient-conflict statistic
+does not track control either — it went *up* (8.4% → 11.4%) while control stayed flat. So neither the
+smoothed code nor the conflicting depth terms of the latent loss is the cause. What a 30-step rollout
+does that this arm did not undo: the reward, continuation and imagined-Q heads are still supervised on
+all 30 imagined depths, and the dynamics is still trained through 30 steps. `loss.jepa_depth` and
+`loss.head_depth` (with `q_imagined_depth`) now cap each depth-summed loss independently so the K
+effect can be partitioned: a K=30 window with every loss capped at 5 must reproduce K=5 (pipeline
+sanity), JEPA-deep/heads-shallow isolates the latent loss, JEPA-shallow/heads-deep isolates the heads.
 
 **Two caveats on my own instruments.** The counterfactual harness restores the emulator RNG but not the
 sticky-action context: 3.4% of branch outcomes depend on which branch ran before (measured), which

@@ -1,0 +1,68 @@
+# Partition of the rollout-length effect at K=30 (k30_jepa_deep).
+#
+# Wave 19's discount arm falsified the smoothing premise: re-weighting the latent loss by 0.9^k returned
+# the latent to K=5's temporal statistics with a healthy Q and the highest action sensitivity of any arm,
+# and the planning gain did not move (H=1 +20.3 vs +18.3 uniform, +40.4 at K=5). What a 30-step window
+# does that that arm did not undo is train the reward/continuation/Q heads on 30 imagined depths and the
+# dynamics through 30 steps. These three arms cap each depth-summed loss independently (0 = all K).
+#   latent loss on all 30 depths, heads on 5: isolates the latent loss (through dynamics and encoder)
+name: breakout_se_k30_jepa_deep_500k
+seed: 0
+device: auto
+network:
+  motion_channels: true
+env:
+  id: ALE/Breakout-v5
+  sticky_action_prob: 0.25      # primary experiment: explicit
+  frame_skip: 1
+  action_repeat: 4
+  screen_size: 84
+  history: 4
+  noop_max: 30
+  fire_on_reset: true           # Breakout needs FIRE to launch the ball
+  fire_on_life_loss: true       # and a new serve after each lost life; see README
+loss:
+  q_imagined: true
+  jepa: true
+  reward: true
+  continuation: true
+  variance: true
+  jepa_target: delta
+  n_step: 5
+  jepa_depth: 0
+  head_depth: 5
+  q_imagined_depth: 5
+  lambda_q: 1.0
+  lambda_jepa: 1.0
+  lambda_reward: 1.0
+  lambda_continue: 1.0
+  lambda_var: 1.0
+  gamma: 0.99
+  variance_floor: 0.1
+replay:
+  capacity: 100000
+  rollout_steps: 30
+  save_with_checkpoint: true
+optim:
+  batch_size: 32
+  lr: 1.0e-4
+  grad_clip_norm: 10.0
+  tau: 0.99
+train:
+  total_decisions: 500000
+  warmup_decisions: 5000
+  update_every: 4
+  eps_start: 1.0
+  eps_end: 0.1
+  eps_decay_decisions: 50000
+  checkpoint_every_decisions: 100000
+  eval_every_decisions: 100000
+  eval_episodes: 3
+  eval_max_episode_decisions: 10000
+  eval_controllers: [q, lookahead]
+eval:
+  episodes: 10
+  seed_base: 10000
+  epsilon: 0.0
+diagnostics:
+  depths: [1, 3, 5, 10, 20, 30]
