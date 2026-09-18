@@ -1,0 +1,33 @@
+README.md
+  s_5e2f5f71230c0a::t_24d64461a1bd2d 474,1430-1456
+configs/sample_eff/breakout_se_k30_heads_deep_500k.yaml
+  s_5e2f5f71230c0a::t_4ee5ae10998a06 1-68
+configs/sample_eff/breakout_se_k30_jepa_deep_500k.yaml
+  s_5e2f5f71230c0a::t_a10e3a0dac817e 1-68
+configs/sample_eff/breakout_se_k30_short_500k.yaml
+  s_5e2f5f71230c0a::t_e3841098ed40f2 1-68
+scripts/run_wave20.sh
+  s_5e2f5f71230c0a::t_e0774c45dfc9eb 1-54
+src/atari_jepa/config.py
+  s_5e2f5f71230c0a::t_9ef87b4232662e 128-134,179-181,208-211
+src/atari_jepa/losses.py
+  s_5e2f5f71230c0a::t_9f79e0d4e9dac8 350-353,365,367-368,370-372,377-378,380
+tests/test_targets.py
+  s_5e2f5f71230c0a::t_5a6563743b2867 204-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5700c3a0f5d9eb5ca8f285f02aeeadccc11f7076",
+  "prompts": {},
+  "sessions": {
+    "s_5e2f5f71230c0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5e2f5f71230c0a",
+        "model": "unknown"
+      },
+      "human_author": "sander-hergarten <mail@sander-hergarten.de>"
+    }
+  }
+}
